@@ -69,18 +69,18 @@ contract LendefiPaymasterTest is Test {
 
     // ============ Setup Tests ============
 
-    function test_PaymasterDeployed() public {
+    function test_PaymasterDeployed() public view {
         assertEq(address(paymaster.entryPoint()), address(entryPoint));
         assertEq(address(paymaster.stakingContract()), address(staking));
     }
 
-    function test_PaymasterHasDeposit() public {
+    function test_PaymasterHasDeposit() public view {
         assertGt(paymaster.getDeposit(), 0);
     }
 
     // ============ Eligibility Tests ============
 
-    function test_CheckEligibilityNoStake() public {
+    function test_CheckEligibilityNoStake() public view {
         (bool eligible, LendefiStaking.Tier tier, uint256 subsidy) = paymaster.checkEligibility(user1, 100_000);
         
         assertFalse(eligible);

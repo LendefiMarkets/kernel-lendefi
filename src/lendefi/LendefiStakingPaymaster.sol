@@ -97,17 +97,15 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
     /**
      * @notice Validate paymaster is willing to sponsor this UserOp
      * @param userOp The user operation
-     * @param userOpHash Hash of the user operation (unused)
      * @param maxCost Maximum cost of the operation
      * @return context Context for postOp
      * @return validationData Validation result
      */
     function validatePaymasterUserOp(
         PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
+        bytes32,
         uint256 maxCost
-    ) external override onlyEntryPoint returns (bytes memory context, uint256 validationData) {
-        userOpHash; // unused
+    ) external view override onlyEntryPoint returns (bytes memory context, uint256 validationData) {
         
         address user = userOp.sender;
 

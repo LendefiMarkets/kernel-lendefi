@@ -145,18 +145,18 @@ contract LendefiStakingTest is Test {
 
     // ============ Tier Tests ============
 
-    function test_GetTierNone() public {
+    function test_GetTierNone() public view {
         assertEq(uint256(staking.getTier(user1)), uint256(LendefiStaking.Tier.NONE));
     }
 
-    function test_GetSubsidyPercentage() public {
+    function test_GetSubsidyPercentage() public view {
         assertEq(staking.getSubsidyPercentage(LendefiStaking.Tier.NONE), 0);
         assertEq(staking.getSubsidyPercentage(LendefiStaking.Tier.BASIC), 50);
         assertEq(staking.getSubsidyPercentage(LendefiStaking.Tier.PREMIUM), 90);
         assertEq(staking.getSubsidyPercentage(LendefiStaking.Tier.ULTIMATE), 100);
     }
 
-    function test_GetMonthlyGasLimit() public {
+    function test_GetMonthlyGasLimit() public view {
         assertEq(staking.getMonthlyGasLimit(LendefiStaking.Tier.NONE), 0);
         assertEq(staking.getMonthlyGasLimit(LendefiStaking.Tier.BASIC), GAS_LIMIT_BASIC);
         assertEq(staking.getMonthlyGasLimit(LendefiStaking.Tier.PREMIUM), GAS_LIMIT_PREMIUM);

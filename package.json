@@ -1,9 +1,18 @@
 {
-  "name": "kernel",
-  "version": "3.0.0",
+  "name": "kernel-lendefi",
+  "version": "3.3.0",
   "license": "MIT",
   "scripts": {
-    "compile": "hardhat compile"
+    "compile": "forge build",
+    "test": "forge test",
+    "test:staking": "forge test --match-path 'test/LendefiStaking.t.sol' -vvv",
+    "test:paymaster": "forge test --match-path 'test/LendefiPaymaster.t.sol' -vvv",
+    "test:lendefi": "forge test --match-path 'test/Lendefi*.t.sol' -vvv",
+    "deploy:kernel": "source .env && forge script script/DeployAll.s.sol:DeployKernelOnly --rpc-url $RPC_URL --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY",
+    "deploy:staking": "source .env && forge script script/DeployLendefi.s.sol:DeployStakingOnly --rpc-url $RPC_URL --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY",
+    "deploy:paymaster": "source .env && forge script script/DeployLendefi.s.sol:DeployPaymasterOnly --rpc-url $RPC_URL --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY",
+    "fund:paymaster": "source .env && forge script script/DeployLendefi.s.sol:FundPaymaster --rpc-url $RPC_URL --broadcast",
+    "clean": "forge clean"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
