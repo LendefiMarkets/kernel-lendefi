@@ -8,6 +8,10 @@ via-ir = false
 optimizer = true
 optimizer_runs = 200
 evm_version = "prague"
+build_info = true
+extra_output = ["storageLayout"]
+ast = true
+ffi = true
 
 [profile.deploy]
 via-ir = true

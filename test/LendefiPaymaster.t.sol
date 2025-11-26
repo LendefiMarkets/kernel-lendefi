@@ -3,9 +3,9 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "src/lendefi/LendefiStaking.sol";
-import "src/lendefi/LendefiStakingPaymaster.sol";
-import "src/interfaces/IEntryPoint.sol";
+import "../src/lendefi/LendefiStaking.sol";
+import "../src/lendefi/LendefiStakingPaymaster.sol";
+import "../src/interfaces/IEntryPoint.sol";
 import "./mock/MockLDFI.sol";
 import "./mock/MockEntryPoint.sol";
 

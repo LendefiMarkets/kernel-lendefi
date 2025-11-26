@@ -5,7 +5,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "../interfaces/IPaymaster.sol";
 import "../interfaces/IEntryPoint.sol";
 import "../interfaces/PackedUserOperation.sol";
@@ -29,7 +29,7 @@ contract LendefiStakingPaymaster is
     UUPSUpgradeable,
     OwnableUpgradeable,
     PausableUpgradeable,
-    ReentrancyGuard,
+    ReentrancyGuardUpgradeable,
     IPaymaster 
 {
     // ============ Errors ============
@@ -110,6 +110,7 @@ contract LendefiStakingPaymaster is
 
         __Ownable_init(_owner);
         __Pausable_init();
+        __ReentrancyGuard_init();
         
         entryPoint = _entryPoint;
         stakingContract = _stakingContract;
