@@ -89,8 +89,11 @@ contract LendefiStaking is
     /// @notice Total tokens staked across all users
     uint256 public totalStaked;
 
+    /// @notice Deployed version (increments on each upgrade)
+    uint256 public deployedVersion;
+
     /// @notice Storage gap for future upgrades
-    uint256[30] private __gap;
+    uint256[29] private __gap;
 
     // ============ Events ============
 
@@ -147,6 +150,7 @@ contract LendefiStaking is
         gasLimitBasic = 500_000;
         gasLimitPremium = 2_000_000;
         gasLimitUltimate = 10_000_000;
+        deployedVersion = 1;
     }
 
     // ============ External Functions ============
@@ -473,5 +477,7 @@ contract LendefiStaking is
     /**
      * @dev Authorize upgrade (UUPS)
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+        deployedVersion++;
+    }
 }

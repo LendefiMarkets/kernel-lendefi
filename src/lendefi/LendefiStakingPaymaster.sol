@@ -60,8 +60,11 @@ contract LendefiStakingPaymaster is
     /// @notice Minimum deposit required in paymaster
     uint256 public minPaymasterDeposit;
 
+    /// @notice Deployed version (increments on each upgrade)
+    uint256 public deployedVersion;
+
     /// @notice Storage gap for future upgrades
-    uint256[30] private __gap;
+    uint256[29] private __gap;
 
     // ============ Events ============
 
@@ -118,6 +121,7 @@ contract LendefiStakingPaymaster is
         // Set defaults
         maxGasPerOperation = 500_000;
         minPaymasterDeposit = 0.1 ether;
+        deployedVersion = 1;
     }
 
     // ============ Receive ============
@@ -359,5 +363,7 @@ contract LendefiStakingPaymaster is
     /**
      * @dev Authorize upgrade (UUPS)
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+        deployedVersion++;
+    }
 }
