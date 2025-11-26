@@ -12,7 +12,7 @@ contract KernelFactory {
 
     constructor(address _impl) {
         implementation = _impl;
-        require(_impl.code.length > 0, ImplementationNotDeployed());
+        if (_impl.code.length == 0) revert ImplementationNotDeployed();
     }
 
     function createAccount(bytes calldata data, bytes32 salt) public payable returns (address) {
