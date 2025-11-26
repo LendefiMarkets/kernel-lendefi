@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "solady/auth/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IPaymaster.sol";
 import "../interfaces/IEntryPoint.sol";
 import "../interfaces/PackedUserOperation.sol";
@@ -9,17 +13,25 @@ import "./LendefiStaking.sol";
 
 /**
  * @title LendefiStakingPaymaster
- * @notice ERC-4337 Paymaster that sponsors gas based on LDF token staking
- * @dev Users stake LDF tokens in LendefiStaking contract to earn gas subsidies
+ * @notice ERC-4337 Paymaster that sponsors gas based on LDFI token staking
+ * @dev Users stake LDFI tokens in LendefiStaking contract to earn gas subsidies
+ *      Upgradeable via UUPS proxy pattern
  * 
  * Flow:
- * 1. User stakes LDF tokens in LendefiStaking contract
+ * 1. User stakes LDFI tokens in LendefiStaking contract
  * 2. Staking determines user's tier (BASIC/PREMIUM/ULTIMATE)
  * 3. When user submits UserOp, paymaster checks tier and gas allowance
  * 4. Paymaster sponsors gas based on tier's subsidy percentage
  * 5. Gas usage is recorded back to staking contract
  */
-contract LendefiStakingPaymaster is IPaymaster, Ownable {
+contract LendefiStakingPaymaster is 
+    Initializable,
+    UUPSUpgradeable,
+    OwnableUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuard,
+    IPaymaster 
+{
     // ============ Errors ============
     
     error NotFromEntryPoint();
@@ -33,17 +45,23 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
 
     // ============ State Variables ============
 
+    /// @notice Contract version for upgrade tracking
+    uint256 public constant VERSION = 1;
+
     /// @notice EntryPoint contract
-    IEntryPoint public immutable entryPoint;
+    IEntryPoint public entryPoint;
 
     /// @notice Staking contract that determines tiers
-    LendefiStaking public immutable stakingContract;
+    LendefiStaking public stakingContract;
 
     /// @notice Maximum gas allowed per single operation
-    uint256 public maxGasPerOperation = 500_000;
+    uint256 public maxGasPerOperation;
 
     /// @notice Minimum deposit required in paymaster
-    uint256 public minPaymasterDeposit = 0.1 ether;
+    uint256 public minPaymasterDeposit;
+
+    /// @notice Storage gap for future upgrades
+    uint256[30] private __gap;
 
     // ============ Events ============
 
@@ -57,6 +75,7 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
     event MinDepositUpdated(uint256 oldMin, uint256 newMin);
     event Deposited(address indexed sender, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
+    event StakingContractUpdated(address indexed oldContract, address indexed newContract);
 
     // ============ Modifiers ============
 
@@ -65,25 +84,39 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
         _;
     }
 
-    // ============ Constructor ============
+    // ============ Constructor (for implementation) ============
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    // ============ Initializer ============
 
     /**
+     * @notice Initialize the contract (called once via proxy)
      * @param _entryPoint EntryPoint contract address
      * @param _stakingContract LendefiStaking contract address
      * @param _owner Owner address
      */
-    constructor(
+    function initialize(
         IEntryPoint _entryPoint,
         LendefiStaking _stakingContract,
         address _owner
-    ) {
+    ) external initializer {
         if (address(_entryPoint) == address(0)) revert ZeroAddress();
         if (address(_stakingContract) == address(0)) revert ZeroAddress();
         if (_owner == address(0)) revert ZeroAddress();
+
+        __Ownable_init(_owner);
+        __Pausable_init();
         
         entryPoint = _entryPoint;
         stakingContract = _stakingContract;
-        _initializeOwner(_owner);
+        
+        // Set defaults
+        maxGasPerOperation = 500_000;
+        minPaymasterDeposit = 0.1 ether;
     }
 
     // ============ Receive ============
@@ -106,6 +139,8 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
         bytes32,
         uint256 maxCost
     ) external view override onlyEntryPoint returns (bytes memory context, uint256 validationData) {
+        // Check not paused (view function can't use whenNotPaused modifier)
+        require(!paused(), "Pausable: paused");
         
         address user = userOp.sender;
 
@@ -141,7 +176,6 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
         context = abi.encode(user, estimatedGas, subsidyAmount, tier);
 
         // Return success with no time bounds
-        // validationData format: 20 bytes aggregator (0 = success), 6 bytes validUntil, 6 bytes validAfter
         validationData = 0;
     }
 
@@ -150,7 +184,7 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
      * @param mode Operation result mode
      * @param context Context from validatePaymasterUserOp
      * @param actualGasCost Actual gas cost incurred
-     * @param actualUserOpFeePerGas Actual fee per gas (unused)
+     * @param actualUserOpFeePerGas Actual fee per gas used to calculate actual gas units
      */
     function postOp(
         PostOpMode mode,
@@ -158,24 +192,29 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
         uint256 actualGasCost,
         uint256 actualUserOpFeePerGas
     ) external override onlyEntryPoint {
-        actualUserOpFeePerGas; // unused
-
         if (mode == PostOpMode.opSucceeded || mode == PostOpMode.opReverted) {
             (
                 address user,
-                uint256 estimatedGas,
+                ,  // estimatedGas - no longer used
                 ,
                 LendefiStaking.Tier tier
             ) = abi.decode(context, (address, uint256, uint256, LendefiStaking.Tier));
 
-            // Record gas usage in staking contract
-            stakingContract.recordGasUsage(user, estimatedGas);
+            // Calculate actual gas used from actual cost
+            uint256 actualGasUsed = actualUserOpFeePerGas > 0 
+                ? actualGasCost / actualUserOpFeePerGas 
+                : 0;
+
+            // Record actual gas usage in staking contract
+            if (actualGasUsed > 0) {
+                stakingContract.recordGasUsage(user, actualGasUsed);
+            }
 
             // Calculate actual subsidy for event
             uint256 subsidyPercentage = stakingContract.getSubsidyPercentage(tier);
             uint256 actualSubsidy = (actualGasCost * subsidyPercentage) / 100;
 
-            emit GasSponsored(user, estimatedGas, actualSubsidy, tier);
+            emit GasSponsored(user, actualGasUsed, actualSubsidy, tier);
         }
     }
 
@@ -227,7 +266,7 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
      * @param to Recipient address
      * @param amount Amount to withdraw
      */
-    function withdrawDeposit(address payable to, uint256 amount) external onlyOwner {
+    function withdrawDeposit(address payable to, uint256 amount) external onlyOwner nonReentrant {
         entryPoint.withdrawTo(to, amount);
         emit Withdrawn(to, amount);
     }
@@ -251,7 +290,7 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
      * @notice Withdraw stake from EntryPoint
      * @param to Recipient address
      */
-    function withdrawStake(address payable to) external onlyOwner {
+    function withdrawStake(address payable to) external onlyOwner nonReentrant {
         entryPoint.withdrawStake(to);
     }
 
@@ -268,12 +307,38 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
 
     /**
      * @notice Update minimum paymaster deposit threshold
-     * @param newMin New minimum deposit
+     * @param newMin New minimum deposit (must be > 0)
      */
     function setMinPaymasterDeposit(uint256 newMin) external onlyOwner {
+        if (newMin == 0) revert PaymasterDepositTooLow();
         uint256 oldMin = minPaymasterDeposit;
         minPaymasterDeposit = newMin;
         emit MinDepositUpdated(oldMin, newMin);
+    }
+
+    /**
+     * @notice Update the staking contract address
+     * @param newStakingContract New staking contract address
+     */
+    function setStakingContract(LendefiStaking newStakingContract) external onlyOwner {
+        if (address(newStakingContract) == address(0)) revert ZeroAddress();
+        address oldContract = address(stakingContract);
+        stakingContract = newStakingContract;
+        emit StakingContractUpdated(oldContract, address(newStakingContract));
+    }
+
+    /**
+     * @notice Pause the contract
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @notice Unpause the contract
+     */
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     // ============ Internal Functions ============
@@ -289,4 +354,9 @@ contract LendefiStakingPaymaster is IPaymaster, Ownable {
         
         return verificationGasLimit + callGasLimit + userOp.preVerificationGas;
     }
+
+    /**
+     * @dev Authorize upgrade (UUPS)
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 }

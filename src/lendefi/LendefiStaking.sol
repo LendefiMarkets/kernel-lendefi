@@ -1,22 +1,35 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "solady/tokens/ERC20.sol";
-import "solady/auth/Ownable.sol";
-import "solady/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title LendefiStaking
- * @notice DeFi staking contract for Lendefi token (LDF)
- * @dev Users stake LDF tokens to earn gas sponsorship tiers
+ * @notice DeFi staking contract for Lendefi token (LDFI)
+ * @dev Users stake LDFI tokens to earn gas sponsorship tiers
+ *      Upgradeable via UUPS proxy pattern
  * 
  * Tier Structure:
  * - NONE:     0 tokens staked         → 0% gas subsidy
- * - BASIC:    >= 1,000 LDF staked    → 50% gas subsidy
- * - PREMIUM:  >= 10,000 LDF staked   → 90% gas subsidy
- * - ULTIMATE: >= 100,000 LDF staked  → 100% gas subsidy
+ * - BASIC:    >= 1,000 LDFI staked   → 50% gas subsidy
+ * - PREMIUM:  >= 10,000 LDFI staked  → 90% gas subsidy
+ * - ULTIMATE: >= 100,000 LDFI staked → 100% gas subsidy
  */
-contract LendefiStaking is Ownable, ReentrancyGuard {
+contract LendefiStaking is 
+    Initializable, 
+    UUPSUpgradeable, 
+    OwnableUpgradeable, 
+    PausableUpgradeable,
+    ReentrancyGuard 
+{
+    using SafeERC20 for IERC20;
+
     // ============ Enums ============
 
     enum Tier {
@@ -33,7 +46,7 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
         uint256 stakedAt;         // Timestamp of first stake
         uint256 lastStakeTime;    // Timestamp of last stake action
         uint256 gasUsedThisMonth; // Gas used in current month
-        uint256 lastResetTime;    // Last monthly reset timestamp
+        uint256 lastResetMonth;   // Last month number when reset occurred
     }
 
     // ============ Constants ============
@@ -43,23 +56,29 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
     uint256 private constant SUBSIDY_ULTIMATE = 100;
     uint256 private constant MONTH = 30 days;
 
+    /// @notice Contract version for upgrade tracking
+    uint256 public constant VERSION = 1;
+
     // ============ State Variables ============
 
     /// @notice The Lendefi token being staked
-    ERC20 public immutable stakingToken;
+    IERC20 public stakingToken;
+
+    /// @notice Global epoch start time for deterministic monthly boundaries
+    uint256 public epochStart;
 
     /// @notice Minimum staking period before unstaking (default: 7 days)
-    uint256 public minStakePeriod = 7 days;
+    uint256 public minStakePeriod;
 
     /// @notice Tier thresholds (in token wei, assuming 18 decimals)
-    uint256 public basicThreshold = 1_000 * 1e18;      // 1,000 LDF
-    uint256 public premiumThreshold = 10_000 * 1e18;   // 10,000 LDF
-    uint256 public ultimateThreshold = 100_000 * 1e18; // 100,000 LDF
+    uint256 public basicThreshold;
+    uint256 public premiumThreshold;
+    uint256 public ultimateThreshold;
 
     /// @notice Monthly gas limits per tier
-    uint256 public gasLimitBasic = 500_000;
-    uint256 public gasLimitPremium = 2_000_000;
-    uint256 public gasLimitUltimate = 10_000_000;
+    uint256 public gasLimitBasic;
+    uint256 public gasLimitPremium;
+    uint256 public gasLimitUltimate;
 
     /// @notice User stakes
     mapping(address => StakeInfo) public stakes;
@@ -69,6 +88,9 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
 
     /// @notice Total tokens staked across all users
     uint256 public totalStaked;
+
+    /// @notice Storage gap for future upgrades
+    uint256[30] private __gap;
 
     // ============ Events ============
 
@@ -89,20 +111,41 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
     error StakePeriodNotMet();
     error NotAuthorizedPaymaster();
     error InvalidThresholds();
+    error InvalidGasLimits();
     error ZeroAddress();
-    error TransferFailed();
 
-    // ============ Constructor ============
+    // ============ Constructor (for implementation) ============
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    // ============ Initializer ============
 
     /**
-     * @param _stakingToken Address of the LDF token
+     * @notice Initialize the contract (called once via proxy)
+     * @param _stakingToken Address of the LDFI token
      * @param _owner Owner address
      */
-    constructor(ERC20 _stakingToken, address _owner) {
+    function initialize(IERC20 _stakingToken, address _owner) external initializer {
         if (address(_stakingToken) == address(0)) revert ZeroAddress();
         if (_owner == address(0)) revert ZeroAddress();
+
+        __Ownable_init(_owner);
+        __Pausable_init();
+
         stakingToken = _stakingToken;
-        _initializeOwner(_owner);
+        epochStart = block.timestamp;
+
+        // Set defaults
+        minStakePeriod = 7 days;
+        basicThreshold = 1_000 * 1e18;
+        premiumThreshold = 10_000 * 1e18;
+        ultimateThreshold = 100_000 * 1e18;
+        gasLimitBasic = 500_000;
+        gasLimitPremium = 2_000_000;
+        gasLimitUltimate = 10_000_000;
     }
 
     // ============ External Functions ============
@@ -111,19 +154,18 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
      * @notice Stake tokens to earn gas sponsorship tier
      * @param amount Amount of tokens to stake
      */
-    function stake(uint256 amount) external nonReentrant {
+    function stake(uint256 amount) external nonReentrant whenNotPaused {
         if (amount == 0) revert ZeroAmount();
 
         StakeInfo storage info = stakes[msg.sender];
         
         // Transfer tokens from user
-        bool success = stakingToken.transferFrom(msg.sender, address(this), amount);
-        if (!success) revert TransferFailed();
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
         // Update stake info
         if (info.amount == 0) {
             info.stakedAt = block.timestamp;
-            info.lastResetTime = block.timestamp;
+            info.lastResetMonth = _getCurrentMonth();
         }
         info.amount += amount;
         info.lastStakeTime = block.timestamp;
@@ -137,7 +179,7 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
      * @notice Unstake tokens
      * @param amount Amount to unstake
      */
-    function unstake(uint256 amount) external nonReentrant {
+    function unstake(uint256 amount) external nonReentrant whenNotPaused {
         if (amount == 0) revert ZeroAmount();
         
         StakeInfo storage info = stakes[msg.sender];
@@ -153,8 +195,7 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
         totalStaked -= amount;
 
         // Transfer tokens back to user
-        bool success = stakingToken.transfer(msg.sender, amount);
-        if (!success) revert TransferFailed();
+        stakingToken.safeTransfer(msg.sender, amount);
 
         Tier newTier = getTier(msg.sender);
         emit Unstaked(msg.sender, amount, info.amount, newTier);
@@ -165,8 +206,9 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
      * @param user User address
      * @param gasUsed Gas amount used
      */
-    function recordGasUsage(address user, uint256 gasUsed) external {
+    function recordGasUsage(address user, uint256 gasUsed) external whenNotPaused {
         if (!authorizedPaymasters[msg.sender]) revert NotAuthorizedPaymaster();
+        if (user == address(0)) revert ZeroAddress();
         
         StakeInfo storage info = stakes[user];
         
@@ -224,7 +266,10 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
      * @return hasAllowance True if user has enough gas remaining
      * @return remainingGas Remaining gas this month
      */
-    function checkGasAllowance(address user, uint256 gasNeeded) external view returns (bool hasAllowance, uint256 remainingGas) {
+    function checkGasAllowance(
+        address user, 
+        uint256 gasNeeded
+    ) external view returns (bool hasAllowance, uint256 remainingGas) {
         StakeInfo storage info = stakes[user];
         Tier tier = getTier(user);
         
@@ -235,8 +280,9 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
         uint256 monthlyLimit = getMonthlyGasLimit(tier);
         uint256 used = info.gasUsedThisMonth;
         
-        // Check if monthly reset is due
-        if (block.timestamp >= info.lastResetTime + MONTH) {
+        // Check if monthly reset is due using deterministic boundaries
+        uint256 currentMonth = _getCurrentMonth();
+        if (currentMonth > info.lastResetMonth) {
             used = 0;
         }
         
@@ -293,6 +339,14 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
         return (basicThreshold - staked, Tier.BASIC);
     }
 
+    /**
+     * @notice Get current month number since epoch
+     * @return Current month number
+     */
+    function getCurrentMonth() external view returns (uint256) {
+        return _getCurrentMonth();
+    }
+
     // ============ Admin Functions ============
 
     /**
@@ -337,6 +391,9 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
      * @param ultimate Ultimate tier gas limit
      */
     function setGasLimits(uint256 basic, uint256 premium, uint256 ultimate) external onlyOwner {
+        if (basic == 0 || premium == 0 || ultimate == 0) revert InvalidGasLimits();
+        if (basic > premium || premium > ultimate) revert InvalidGasLimits();
+        
         gasLimitBasic = basic;
         gasLimitPremium = premium;
         gasLimitUltimate = ultimate;
@@ -355,33 +412,65 @@ contract LendefiStaking is Ownable, ReentrancyGuard {
     }
 
     /**
+     * @notice Pause the contract
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @notice Unpause the contract
+     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    /**
      * @notice Emergency withdraw of stuck tokens (not staking tokens)
      * @param token Token address
      * @param to Recipient
      * @param amount Amount
      */
-    function emergencyWithdraw(ERC20 token, address to, uint256 amount) external onlyOwner {
+    function emergencyWithdraw(IERC20 token, address to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
         if (address(token) == address(stakingToken)) {
             // Can only withdraw excess (not staked tokens)
             uint256 balance = stakingToken.balanceOf(address(this));
             uint256 excess = balance > totalStaked ? balance - totalStaked : 0;
             if (amount > excess) revert InsufficientStake();
         }
-        token.transfer(to, amount);
+        token.safeTransfer(to, amount);
     }
 
     // ============ Internal Functions ============
 
     /**
-     * @dev Reset monthly gas usage if 30 days have passed
+     * @dev Get current month number since epoch start
+     * @return Current month number (0-indexed)
+     */
+    function _getCurrentMonth() internal view returns (uint256) {
+        return (block.timestamp - epochStart) / MONTH;
+    }
+
+    /**
+     * @dev Reset monthly gas usage if we're in a new month
+     * Uses deterministic month boundaries based on epochStart
      */
     function _resetMonthlyUsageIfNeeded(address user) internal {
         StakeInfo storage info = stakes[user];
         
-        if (block.timestamp >= info.lastResetTime + MONTH) {
+        uint256 currentMonth = _getCurrentMonth();
+        
+        // Only reset if we've moved to a new month
+        if (currentMonth > info.lastResetMonth) {
             info.gasUsedThisMonth = 0;
-            info.lastResetTime = block.timestamp;
+            info.lastResetMonth = currentMonth;
             emit MonthlyGasReset(user);
         }
     }
+
+    /**
+     * @dev Authorize upgrade (UUPS)
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 }

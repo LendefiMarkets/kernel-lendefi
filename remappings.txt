@@ -2,3 +2,5 @@ ExcessivelySafeCall/=lib/ExcessivelySafeCall/src/
 forge-std/=lib/forge-std/src/
 solady/=lib/solady/src/
 solady_test/=lib/solady/test/
+@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
+@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/
