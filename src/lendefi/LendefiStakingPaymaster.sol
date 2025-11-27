@@ -13,12 +13,12 @@ import "./LendefiStaking.sol";
 
 /**
  * @title LendefiStakingPaymaster
- * @notice ERC-4337 Paymaster that sponsors gas based on LDFI token staking
- * @dev Users stake LDFI tokens in LendefiStaking contract to earn gas subsidies
+ * @notice ERC-4337 Paymaster that sponsors gas based on LDF token staking
+ * @dev Users stake LDF tokens in LendefiStaking contract to earn gas subsidies
  *      Upgradeable via UUPS proxy pattern
  * 
  * Flow:
- * 1. User stakes LDFI tokens in LendefiStaking contract
+ * 1. User stakes LDF tokens in LendefiStaking contract
  * 2. Staking determines user's tier (BASIC/PREMIUM/ULTIMATE)
  * 3. When user submits UserOp, paymaster checks tier and gas allowance
  * 4. Paymaster sponsors gas based on tier's subsidy percentage

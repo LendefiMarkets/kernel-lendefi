@@ -11,15 +11,15 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title LendefiStaking
- * @notice DeFi staking contract for Lendefi token (LDFI)
- * @dev Users stake LDFI tokens to earn gas sponsorship tiers
+ * @notice DeFi staking contract for Lendefi token (LDF)
+ * @dev Users stake LDF tokens to earn gas sponsorship tiers
  *      Upgradeable via UUPS proxy pattern
  * 
  * Tier Structure:
  * - NONE:     0 tokens staked         → 0% gas subsidy
- * - BASIC:    >= 1,000 LDFI staked   → 50% gas subsidy
- * - PREMIUM:  >= 10,000 LDFI staked  → 90% gas subsidy
- * - ULTIMATE: >= 100,000 LDFI staked → 100% gas subsidy
+ * - BASIC:    >= 1,000 LDF staked   → 50% gas subsidy
+ * - PREMIUM:  >= 10,000 LDF staked  → 90% gas subsidy
+ * - ULTIMATE: >= 100,000 LDF staked → 100% gas subsidy
  */
 contract LendefiStaking is 
     Initializable, 
@@ -128,7 +128,7 @@ contract LendefiStaking is
 
     /**
      * @notice Initialize the contract (called once via proxy)
-     * @param _stakingToken Address of the LDFI token
+     * @param _stakingToken Address of the LDF token
      * @param _owner Owner address
      */
     function initialize(IERC20 _stakingToken, address _owner) external initializer {
