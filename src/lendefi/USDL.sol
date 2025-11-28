@@ -44,6 +44,7 @@ contract USDL is
     /// @dev AccessControl Role Constants
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant BRIDGE_ROLE = keccak256("BRIDGE_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
     bytes32 public constant BLACKLISTER_ROLE = keccak256("BLACKLISTER_ROLE");
 
@@ -64,6 +65,7 @@ contract USDL is
     // ============ Events ============
 
     event Minted(address indexed minter, address indexed to, uint256 amount);
+    event BridgeMinted(address indexed bridge, address indexed to, uint256 amount);
     event CCIPAdminTransferred(address indexed previousAdmin, address indexed newAdmin);
     event Blacklisted(address indexed account);
     event UnBlacklisted(address indexed account);
@@ -129,26 +131,31 @@ contract USDL is
     // ============ Minting Functions ============
 
     /**
-     * @notice Mint USDL stablecoins
+     * @notice Mint USDL stablecoins (admin minting)
      * @param account Address receiving the tokens
      * @param amount Amount to mint
-     * @dev Only callable by addresses with MINTER_ROLE:
-     *      - YieldRouter: When user deposits collateral (100% converted to yield assets)
-     *      - CCIP Token Pool: For cross-chain bridge transfers
+     * @dev Only callable by addresses with ADMIN_MINTER_ROLE (YieldRouter, admin)
      */
     function mint(address account, uint256 amount)
         external
         override
         whenNotPaused
-        onlyRole(MINTER_ROLE)
     {
+        if (!hasRole(MINTER_ROLE, msg.sender) && !hasRole(BRIDGE_ROLE, msg.sender)) {
+            revert AccessControlUnauthorizedAccount(msg.sender, MINTER_ROLE);
+        }
         if (account == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
         if (blacklisted[account]) revert AddressBlacklisted(account);
         if (account == address(this)) revert InvalidRecipient(account);
 
         _mint(account, amount);
-        emit Minted(msg.sender, account, amount);
+        
+        if (hasRole(BRIDGE_ROLE, msg.sender)) {
+            emit BridgeMinted(msg.sender, account, amount);
+        } else {
+            emit Minted(msg.sender, account, amount);
+        }
     }
 
     // ============ Burn Functions ============
@@ -174,8 +181,8 @@ contract USDL is
     // ============ Admin Functions ============
 
     /**
-     * @notice Grant minter role
-     * @param minter Address to grant minting rights (YieldRouter or CCIP Token Pool)
+     * @notice Grant minter role (for YieldRouter, admin operations)
+     * @param minter Address to grant minting rights
      */
     function grantMinterRole(address minter) external nonZeroAddress(minter) onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(MINTER_ROLE, minter);
@@ -187,6 +194,22 @@ contract USDL is
      */
     function revokeMinterRole(address minter) external nonZeroAddress(minter) onlyRole(DEFAULT_ADMIN_ROLE) {
         _revokeRole(MINTER_ROLE, minter);
+    }
+
+    /**
+     * @notice Grant bridge role (for CCIP Token Pool bridge)
+     * @param bridge Address to grant bridge minting rights
+     */
+    function grantBridgeRole(address bridge) external nonZeroAddress(bridge) onlyRole(DEFAULT_ADMIN_ROLE) {
+        _grantRole(BRIDGE_ROLE, bridge);
+    }
+
+    /**
+     * @notice Revoke bridge role
+     * @param bridge Address to revoke
+     */
+    function revokeBridgeRole(address bridge) external nonZeroAddress(bridge) onlyRole(DEFAULT_ADMIN_ROLE) {
+        _revokeRole(BRIDGE_ROLE, bridge);
     }
 
     /**

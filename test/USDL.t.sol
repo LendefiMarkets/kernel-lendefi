@@ -14,7 +14,11 @@ contract USDLTest is Test {
     address public user2 = address(0x4);
     address public bridge = address(0x5);
     address public minter = address(0x6);
-    address public blacklisted = address(0x7);
+    address public blacklistedUser = address(0x7);
+    
+    // Events for testing
+    event Minted(address indexed minter, address indexed to, uint256 amount);
+    event BridgeMinted(address indexed bridge, address indexed to, uint256 amount);
     
     function setUp() public {
         // Deploy implementation
@@ -29,10 +33,10 @@ contract USDLTest is Test {
         usdlProxy = USDL(address(proxy));
         
         // Setup minter role (must be done by owner)
-        // Cache the role first to avoid staticcall clearing the prank
-        bytes32 minterRole = usdlProxy.MINTER_ROLE();
-        vm.prank(owner);
-        usdlProxy.grantRole(minterRole, minter);
+        vm.startPrank(owner);
+        usdlProxy.grantMinterRole(minter);
+        usdlProxy.grantBridgeRole(bridge);
+        vm.stopPrank();
     }
     
     // ============ Initialization Tests ============
@@ -58,7 +62,10 @@ contract USDLTest is Test {
     
     // ============ Minting Tests ============
     
-    function test_Mint() public {
+    function test_MinterMint() public {
+        vm.expectEmit(true, true, false, true);
+        emit Minted(minter, user1, 10_000 ether);
+        
         vm.prank(minter);
         usdlProxy.mint(user1, 10_000 ether);
         
@@ -66,7 +73,26 @@ contract USDLTest is Test {
         assertEq(usdlProxy.totalSupply(), 10_000 ether);
     }
     
-    function test_MintNotMinterReverts() public {
+    function test_MinterMintEmitsMintedEvent() public {
+        vm.expectEmit(true, true, false, true);
+        emit Minted(minter, user1, 10_000 ether);
+        
+        vm.prank(minter);
+        usdlProxy.mint(user1, 10_000 ether);
+    }
+    
+    function test_OwnerCanMint() public {
+        // Owner has MINTER_ROLE from initialization
+        vm.expectEmit(true, true, false, true);
+        emit Minted(owner, user1, 10_000 ether);
+        
+        vm.prank(owner);
+        usdlProxy.mint(user1, 10_000 ether);
+        
+        assertEq(usdlProxy.balanceOf(user1), 10_000 ether);
+    }
+    
+    function test_MintNotMinterOrBridgeReverts() public {
         vm.prank(user1);
         vm.expectRevert();
         usdlProxy.mint(user1, 10_000 ether);
@@ -78,33 +104,23 @@ contract USDLTest is Test {
         usdlProxy.mint(user1, 0);
     }
     
+    function test_MintToZeroAddressReverts() public {
+        vm.prank(minter);
+        vm.expectRevert(USDL.ZeroAddress.selector);
+        usdlProxy.mint(address(0), 10_000 ether);
+    }
+    
     function test_MintToSelfReverts() public {
         vm.prank(minter);
         vm.expectRevert(abi.encodeWithSelector(USDL.InvalidRecipient.selector, address(usdlProxy)));
         usdlProxy.mint(address(usdlProxy), 10_000 ether);
     }
     
-    // ============ Bridge Role Tests ============
-    
-    function test_GrantBridgeRole() public {
-        vm.prank(owner);
-        usdlProxy.grantMinterRole(bridge);
-        assertTrue(usdlProxy.hasRole(usdlProxy.MINTER_ROLE(), bridge));
-    }
-    
-    function test_RevokeBridgeRole() public {
-        vm.startPrank(owner);
-        usdlProxy.grantMinterRole(bridge);
-        usdlProxy.revokeMinterRole(bridge);
-        vm.stopPrank();
-        assertFalse(usdlProxy.hasRole(usdlProxy.MINTER_ROLE(), bridge));
-    }
-    
     // ============ Bridge Mint Tests ============
     
-    function test_MinterMint() public {
-        vm.prank(owner);
-        usdlProxy.grantMinterRole(bridge);
+    function test_BridgeMint() public {
+        vm.expectEmit(true, true, false, true);
+        emit BridgeMinted(bridge, user1, 10_000 ether);
         
         vm.prank(bridge);
         usdlProxy.mint(user1, 10_000 ether);
@@ -112,9 +128,153 @@ contract USDLTest is Test {
         assertEq(usdlProxy.balanceOf(user1), 10_000 ether);
     }
     
-    function test_MinterMintWithoutRoleReverts() public {
+    function test_BridgeMintEmitsBridgeMintedEvent() public {
+        vm.expectEmit(true, true, false, true);
+        emit BridgeMinted(bridge, user1, 5_000 ether);
+        
+        vm.prank(bridge);
+        usdlProxy.mint(user1, 5_000 ether);
+    }
+    
+    function test_BridgeMintDoesNotEmitMintedEvent() public {
+        // Ensure bridge mint emits BridgeMinted, not Minted
+        vm.recordLogs();
+        
+        vm.prank(bridge);
+        usdlProxy.mint(user1, 10_000 ether);
+        
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        
+        // Find the event and verify it's BridgeMinted
+        bool foundBridgeMinted = false;
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("BridgeMinted(address,address,uint256)")) {
+                foundBridgeMinted = true;
+            }
+            // Ensure Minted event was NOT emitted
+            assertFalse(logs[i].topics[0] == keccak256("Minted(address,address,uint256)"));
+        }
+        assertTrue(foundBridgeMinted, "BridgeMinted event should be emitted");
+    }
+    
+    function test_MinterMintDoesNotEmitBridgeMintedEvent() public {
+        vm.recordLogs();
+        
+        vm.prank(minter);
+        usdlProxy.mint(user1, 10_000 ether);
+        
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        
+        // Find the event and verify it's Minted
+        bool foundMinted = false;
+        for (uint i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("Minted(address,address,uint256)")) {
+                foundMinted = true;
+            }
+            // Ensure BridgeMinted event was NOT emitted
+            assertFalse(logs[i].topics[0] == keccak256("BridgeMinted(address,address,uint256)"));
+        }
+        assertTrue(foundMinted, "Minted event should be emitted");
+    }
+    
+    // ============ Minter Role Tests ============
+    
+    function test_GrantMinterRole() public {
+        address newMinter = address(0x99);
+        vm.prank(owner);
+        usdlProxy.grantMinterRole(newMinter);
+        assertTrue(usdlProxy.hasRole(usdlProxy.MINTER_ROLE(), newMinter));
+    }
+    
+    function test_RevokeMinterRole() public {
+        vm.prank(owner);
+        usdlProxy.revokeMinterRole(minter);
+        assertFalse(usdlProxy.hasRole(usdlProxy.MINTER_ROLE(), minter));
+    }
+    
+    function test_GrantMinterRoleZeroAddressReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(USDL.ZeroAddress.selector);
+        usdlProxy.grantMinterRole(address(0));
+    }
+    
+    function test_RevokeMinterRoleZeroAddressReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(USDL.ZeroAddress.selector);
+        usdlProxy.revokeMinterRole(address(0));
+    }
+    
+    function test_GrantMinterRoleNotAdminReverts() public {
         vm.prank(user1);
         vm.expectRevert();
+        usdlProxy.grantMinterRole(user2);
+    }
+    
+    // ============ Bridge Role Tests ============
+    
+    function test_GrantBridgeRole() public {
+        address newBridge = address(0x88);
+        vm.prank(owner);
+        usdlProxy.grantBridgeRole(newBridge);
+        assertTrue(usdlProxy.hasRole(usdlProxy.BRIDGE_ROLE(), newBridge));
+    }
+    
+    function test_RevokeBridgeRole() public {
+        vm.prank(owner);
+        usdlProxy.revokeBridgeRole(bridge);
+        assertFalse(usdlProxy.hasRole(usdlProxy.BRIDGE_ROLE(), bridge));
+    }
+    
+    function test_GrantBridgeRoleZeroAddressReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(USDL.ZeroAddress.selector);
+        usdlProxy.grantBridgeRole(address(0));
+    }
+    
+    function test_RevokeBridgeRoleZeroAddressReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(USDL.ZeroAddress.selector);
+        usdlProxy.revokeBridgeRole(address(0));
+    }
+    
+    function test_GrantBridgeRoleNotAdminReverts() public {
+        vm.prank(user1);
+        vm.expectRevert();
+        usdlProxy.grantBridgeRole(user2);
+    }
+    
+    function test_RevokedBridgeCannotMint() public {
+        vm.prank(owner);
+        usdlProxy.revokeBridgeRole(bridge);
+        
+        vm.prank(bridge);
+        vm.expectRevert();
+        usdlProxy.mint(user1, 10_000 ether);
+    }
+    
+    function test_RevokedMinterCannotMint() public {
+        vm.prank(owner);
+        usdlProxy.revokeMinterRole(minter);
+        
+        vm.prank(minter);
+        vm.expectRevert();
+        usdlProxy.mint(user1, 10_000 ether);
+    }
+    
+    // ============ Dual Role Tests ============
+    
+    function test_AddressWith_BothRolesEmitsBridgeMintedEvent() public {
+        // Grant both roles to same address - BRIDGE_ROLE takes precedence
+        address dualRole = address(0x77);
+        vm.startPrank(owner);
+        usdlProxy.grantMinterRole(dualRole);
+        usdlProxy.grantBridgeRole(dualRole);
+        vm.stopPrank();
+        
+        vm.expectEmit(true, true, false, true);
+        emit BridgeMinted(dualRole, user1, 10_000 ether);
+        
+        vm.prank(dualRole);
         usdlProxy.mint(user1, 10_000 ether);
     }
     
@@ -147,31 +307,40 @@ contract USDLTest is Test {
     
     function test_Blacklist() public {
         vm.prank(owner);
-        usdlProxy.blacklist(blacklisted);
-        assertTrue(usdlProxy.blacklisted(blacklisted));
+        usdlProxy.blacklist(blacklistedUser);
+        assertTrue(usdlProxy.blacklisted(blacklistedUser));
     }
     
     function test_Unblacklist() public {
         vm.startPrank(owner);
-        usdlProxy.blacklist(blacklisted);
-        usdlProxy.unblacklist(blacklisted);
+        usdlProxy.blacklist(blacklistedUser);
+        usdlProxy.unblacklist(blacklistedUser);
         vm.stopPrank();
-        assertFalse(usdlProxy.blacklisted(blacklisted));
+        assertFalse(usdlProxy.blacklisted(blacklistedUser));
     }
     
     function test_BlacklistNotBlacklisterReverts() public {
         vm.prank(user1);
         vm.expectRevert();
-        usdlProxy.blacklist(blacklisted);
+        usdlProxy.blacklist(blacklistedUser);
     }
     
-    function test_MintToBlacklistedReverts() public {
+    function test_MinterMintToBlacklistedReverts() public {
         vm.prank(owner);
-        usdlProxy.blacklist(blacklisted);
+        usdlProxy.blacklist(blacklistedUser);
         
         vm.prank(minter);
-        vm.expectRevert(abi.encodeWithSelector(USDL.AddressBlacklisted.selector, blacklisted));
-        usdlProxy.mint(blacklisted, 10_000 ether);
+        vm.expectRevert(abi.encodeWithSelector(USDL.AddressBlacklisted.selector, blacklistedUser));
+        usdlProxy.mint(blacklistedUser, 10_000 ether);
+    }
+    
+    function test_BridgeMintToBlacklistedReverts() public {
+        vm.prank(owner);
+        usdlProxy.blacklist(blacklistedUser);
+        
+        vm.prank(bridge);
+        vm.expectRevert(abi.encodeWithSelector(USDL.AddressBlacklisted.selector, blacklistedUser));
+        usdlProxy.mint(blacklistedUser, 10_000 ether);
     }
     
     function test_TransferFromBlacklistedReverts() public {
@@ -198,17 +367,6 @@ contract USDLTest is Test {
         usdlProxy.transfer(user2, 5_000 ether);
     }
     
-    function test_MinterMintToBlacklistedReverts() public {
-        vm.startPrank(owner);
-        usdlProxy.grantMinterRole(bridge);
-        usdlProxy.blacklist(blacklisted);
-        vm.stopPrank();
-        
-        vm.prank(bridge);
-        vm.expectRevert(abi.encodeWithSelector(USDL.AddressBlacklisted.selector, blacklisted));
-        usdlProxy.mint(blacklisted, 10_000 ether);
-    }
-    
     // ============ CCIP Admin Tests ============
     
     function test_SetCCIPAdmin() public {
@@ -221,6 +379,12 @@ contract USDLTest is Test {
         vm.prank(owner);
         vm.expectRevert(USDL.ZeroAddress.selector);
         usdlProxy.setCCIPAdmin(address(0));
+    }
+    
+    function test_SetCCIPAdminNotAdminReverts() public {
+        vm.prank(user1);
+        vm.expectRevert();
+        usdlProxy.setCCIPAdmin(user2);
     }
     
     // ============ Pause Tests ============
@@ -236,6 +400,15 @@ contract USDLTest is Test {
         usdlProxy.pause();
         
         vm.prank(minter);
+        vm.expectRevert();
+        usdlProxy.mint(user1, 10_000 ether);
+    }
+    
+    function test_PauseBridgeMintReverts() public {
+        vm.prank(owner);
+        usdlProxy.pause();
+        
+        vm.prank(bridge);
         vm.expectRevert();
         usdlProxy.mint(user1, 10_000 ether);
     }
