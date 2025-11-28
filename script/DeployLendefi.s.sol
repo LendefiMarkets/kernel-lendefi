@@ -9,7 +9,7 @@ import "../src/Kernel.sol";
 import "../src/factory/KernelFactory.sol";
 import "../src/lendefi/LendefiStaking.sol";
 import "../src/lendefi/LendefiStakingPaymaster.sol";
-import "../src/interfaces/IEntryPoint.sol";
+import "../src/aa-v07/contracts/interfaces/IEntryPoint.sol";
 
 /**
  * @title DeployKernel
@@ -86,7 +86,7 @@ contract DeployLendefiStaking is Script {
         );
 
         console.log("Proxy deployed:", proxy);
-        console.log("Version:", LendefiStaking(proxy).VERSION());
+        console.log("Version:", LendefiStaking(proxy).version());
 
         vm.stopBroadcast();
 
@@ -134,7 +134,7 @@ contract DeployLendefiPaymaster is Script {
         );
 
         console.log("Proxy deployed:", proxy);
-        console.log("Version:", LendefiStakingPaymaster(payable(proxy)).VERSION());
+        console.log("Version:", LendefiStakingPaymaster(payable(proxy)).version());
 
         // Authorize paymaster in staking contract
         LendefiStaking(stakingAddress).authorizePaymaster(proxy);
@@ -186,7 +186,7 @@ contract DeployLendefiFull is Script {
         );
         LendefiStaking staking = LendefiStaking(stakingProxy);
         console.log("Staking proxy:", stakingProxy);
-        console.log("Staking version:", staking.VERSION());
+        console.log("Staking version:", staking.version());
 
         // 2. Deploy LendefiStakingPaymaster with UUPS proxy
         address paymasterProxy = Upgrades.deployUUPSProxy(
@@ -198,7 +198,7 @@ contract DeployLendefiFull is Script {
         );
         LendefiStakingPaymaster paymaster = LendefiStakingPaymaster(payable(paymasterProxy));
         console.log("Paymaster proxy:", paymasterProxy);
-        console.log("Paymaster version:", paymaster.VERSION());
+        console.log("Paymaster version:", paymaster.version());
 
         // 3. Authorize paymaster in staking contract
         staking.authorizePaymaster(paymasterProxy);
@@ -318,7 +318,7 @@ contract UpgradeLendefiStaking is Script {
 
         console.log("=== Upgrade LendefiStaking ===");
         console.log("Proxy:", stakingProxy);
-        console.log("Current version:", LendefiStaking(stakingProxy).VERSION());
+        console.log("Current version:", LendefiStaking(stakingProxy).version());
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -330,7 +330,7 @@ contract UpgradeLendefiStaking is Script {
         );
 
         console.log("Upgrade complete");
-        console.log("New version:", LendefiStaking(stakingProxy).VERSION());
+        console.log("New version:", LendefiStaking(stakingProxy).version());
 
         vm.stopBroadcast();
     }
@@ -355,7 +355,7 @@ contract UpgradeLendefiPaymaster is Script {
 
         console.log("=== Upgrade LendefiStakingPaymaster ===");
         console.log("Proxy:", paymasterProxy);
-        console.log("Current version:", LendefiStakingPaymaster(payable(paymasterProxy)).VERSION());
+        console.log("Current version:", LendefiStakingPaymaster(payable(paymasterProxy)).version());
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -367,7 +367,7 @@ contract UpgradeLendefiPaymaster is Script {
         );
 
         console.log("Upgrade complete");
-        console.log("New version:", LendefiStakingPaymaster(payable(paymasterProxy)).VERSION());
+        console.log("New version:", LendefiStakingPaymaster(payable(paymasterProxy)).version());
 
         vm.stopBroadcast();
     }
