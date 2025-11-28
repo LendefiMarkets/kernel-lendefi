@@ -56,8 +56,7 @@ contract LendefiStaking is
     uint256 private constant SUBSIDY_ULTIMATE = 100;
     uint256 private constant MONTH = 30 days;
 
-    /// @notice Contract version for upgrade tracking
-    uint256 public constant VERSION = 1;
+
 
     // ============ State Variables ============
 
@@ -90,7 +89,7 @@ contract LendefiStaking is
     uint256 public totalStaked;
 
     /// @notice Deployed version (increments on each upgrade)
-    uint256 public deployedVersion;
+    uint256 public version;
 
     /// @notice Storage gap for future upgrades
     uint256[29] private __gap;
@@ -150,7 +149,7 @@ contract LendefiStaking is
         gasLimitBasic = 500_000;
         gasLimitPremium = 2_000_000;
         gasLimitUltimate = 10_000_000;
-        deployedVersion = 1;
+        version = 1;
     }
 
     // ============ External Functions ============
@@ -478,6 +477,6 @@ contract LendefiStaking is
      * @dev Authorize upgrade (UUPS)
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
-        deployedVersion++;
+        version++;
     }
 }
