@@ -65,7 +65,7 @@ contract LendefiStakingTest is Test {
     // ============ Staking Tests ============
 
     function test_Version() public view {
-        assertEq(staking.VERSION(), 1);
+        assertEq(staking.version(), 1);
     }
 
     function test_StakeBasicTier() public {

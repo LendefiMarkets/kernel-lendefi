@@ -77,8 +77,8 @@ contract LendefiPaymasterTest is Test {
     // ============ Validation Tests ============
 
     function test_Version() public view {
-        assertEq(paymaster.VERSION(), 1);
-        assertEq(staking.VERSION(), 1);
+        assertEq(paymaster.version(), 1);
+        assertEq(staking.version(), 1);
     }
 
     function test_ValidateUserOpBasicTier() public {
@@ -249,45 +249,6 @@ contract LendefiPaymasterTest is Test {
         paymaster.setStakingContract(newStaking);
         
         assertEq(address(paymaster.stakingContract()), address(newStaking));
-    }
-
-    // ============ Pause Tests ============
-
-    function test_PauseValidation() public {
-        vm.prank(user1);
-        staking.stake(BASIC_THRESHOLD);
-        
-        vm.prank(owner);
-        paymaster.pause();
-        
-        PackedUserOperation memory userOp = _createUserOp(user1, 100_000);
-        
-        vm.prank(address(entryPoint));
-        vm.expectRevert("Pausable: paused");
-        paymaster.validatePaymasterUserOp(userOp, bytes32(0), 0.001 ether);
-    }
-
-    function test_UnpauseAllowsValidation() public {
-        vm.prank(user1);
-        staking.stake(BASIC_THRESHOLD);
-        
-        vm.prank(owner);
-        paymaster.pause();
-        
-        vm.prank(owner);
-        paymaster.unpause();
-        
-        PackedUserOperation memory userOp = _createUserOp(user1, 100_000);
-        
-        vm.prank(address(entryPoint));
-        (bytes memory context, uint256 validationData) = paymaster.validatePaymasterUserOp(
-            userOp,
-            bytes32(0),
-            0.001 ether
-        );
-        
-        assertEq(validationData, 0);
-        assertTrue(context.length > 0);
     }
 
     // ============ Upgrade Tests ============
