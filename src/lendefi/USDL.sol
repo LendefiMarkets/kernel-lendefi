@@ -3,8 +3,8 @@ pragma solidity 0.8.23;
 
 /**
  * @title USDL - Yield-Bearing USD Vault
- * @notice ERC-4626 vault that accepts USDC and allocates to yield-bearing RWA assets
- * @dev Users deposit USDC, receive USDL shares. Share price increases as yield accrues.
+ * @notice ERC-4626 vault that accepts USDC deposits and allocates to yield-bearing RWA assets
+ * @dev Users deposit USDC, receive USDL shares. Share price increases as yield accrues from underlying protocols.
  *
  *      Example:
  *      - User deposits 1000 USDC at launch → gets 1000 USDL
@@ -14,6 +14,23 @@ pragma solidity 0.8.23;
  *      - ERC-4626 vaults (sDAI, Morpho, etc.)
  *      - Aave V3 (aUSDC)
  *      - Ondo OUSG (requires whitelist)
+ *
+ *      Key mechanisms:
+ *      - Internal Accounting: totalDepositedAssets tracks actual user deposits to prevent inflation attacks from bridge mints
+ *      - Rebase Index: Increases with yield accrual, distributing gains proportionally while maintaining 1:1 USDC peg
+ *      - Bridge Compatibility: CCIP burn-and-mint operations bypass internal accounting to avoid double-counting
+ *
+ *      Security features:
+ *      - Blacklist for regulatory compliance
+ *      - Emergency pause functionality
+ *      - Role-based access control (DEFAULT_ADMIN, PAUSER, MANAGER, etc.)
+ *      - Reentrancy protection on state-changing functions
+ *      - UUPS upgradeable proxy pattern
+ *
+ *      Yield management:
+ *      - Automated yield accrual via Chainlink Automation
+ *      - Configurable allocation across multiple protocols
+ *      - Waterfall redemption strategy for withdrawals
  *
  * @custom:security-contact security@lendefimarkets.com
  */
@@ -235,7 +252,8 @@ contract USDL is
 
     /**
      * @notice Returns the address of the underlying asset
-     * @return The address of the underlying ERC-20 token
+     * @dev The underlying asset is USDC (6 decimals). This is stored in assetAddress and set during initialization.
+     * @return The address of the underlying ERC-20 token (USDC)
      */
     function asset() public view returns (address) {
         return assetAddress;
@@ -323,7 +341,10 @@ contract USDL is
 
     /**
      * @notice Convert assets to shares
-     * @dev Uses internal accounting to prevent inflation attacks
+     * @dev Uses internal accounting (totalDepositedAssets) to prevent inflation attacks from bridge mints.
+     *      Formula: shares = assets * totalSupply / totalDepositedAssets (with Floor rounding)
+     * @param assets Amount of assets to convert
+     * @return shares Number of shares equivalent to the assets
      */
     function convertToShares(uint256 assets) public view returns (uint256) {
         return _convertToSharesInternal(assets, Math.Rounding.Floor);
@@ -331,7 +352,10 @@ contract USDL is
 
     /**
      * @notice Convert shares to assets
-     * @dev Uses internal accounting to prevent inflation attacks
+     * @dev Uses internal accounting (totalDepositedAssets) to prevent inflation attacks from bridge mints.
+     *      Formula: assets = shares * totalDepositedAssets / totalSupply (with Floor rounding)
+     * @param shares Number of shares to convert
+     * @return assets Amount of assets equivalent to the shares
      */
     function convertToAssets(uint256 shares) public view returns (uint256) {
         return _convertToAssetsInternal(shares, Math.Rounding.Floor);
@@ -339,6 +363,8 @@ contract USDL is
 
     /**
      * @notice Maximum assets that can be deposited
+     * @dev Returns unlimited deposit capacity. Actual limits may apply due to liquidity or protocol constraints.
+     * @return Maximum assets depositable (unlimited)
      */
     function maxDeposit(address) public pure returns (uint256) {
         return type(uint256).max;
@@ -346,6 +372,8 @@ contract USDL is
 
     /**
      * @notice Maximum shares that can be minted
+     * @dev Returns unlimited mint capacity. Actual limits may apply due to liquidity or protocol constraints.
+     * @return Maximum shares mintable (unlimited)
      */
     function maxMint(address) public pure returns (uint256) {
         return type(uint256).max;
@@ -353,6 +381,10 @@ contract USDL is
 
     /**
      * @notice Maximum assets that can be withdrawn by owner
+     * @dev Calculates the maximum assets withdrawable based on the owner's share balance and current share price.
+     *      Uses internal accounting to ensure accurate conversion.
+     * @param owner The address whose maximum withdrawal amount to query
+     * @return Maximum assets withdrawable by the owner
      */
     function maxWithdraw(address owner) public view returns (uint256) {
         return _convertToAssetsInternal(balanceOf(owner), Math.Rounding.Floor);
@@ -360,6 +392,9 @@ contract USDL is
 
     /**
      * @notice Maximum shares that can be redeemed by owner
+     * @dev Returns the owner's current balance in rebased terms, which represents the maximum redeemable shares.
+     * @param owner The address whose maximum redemption amount to query
+     * @return Maximum shares redeemable by the owner
      */
     function maxRedeem(address owner) public view returns (uint256) {
         return balanceOf(owner);
@@ -544,7 +579,8 @@ contract USDL is
 
     /**
      * @notice Mint shares for CCIP bridge (burn-and-mint pattern)
-     * @dev Conforms to Chainlink IBurnMintERC20 signature: mint(address,uint256)
+     * @dev Conforms to Chainlink IBurnMintERC20 signature: mint(address,uint256).
+     *      This mint operation does not update totalDepositedAssets, as it's for cross-chain transfers only.
      * @param account Address receiving the newly minted shares on this chain
      * @param amount Amount of shares to mint
      */
@@ -563,9 +599,9 @@ contract USDL is
 
     /**
      * @notice Burn shares for CCIP bridge (burn-and-mint pattern)
+     * @dev Only callable by BRIDGE_ROLE (CCIP Token Pool). Does not update totalDepositedAssets.
      * @param account Address to burn from
      * @param amount Amount of shares to burn
-     * @dev Only callable by BRIDGE_ROLE (CCIP Token Pool)
      */
     function burn(address account, uint256 amount) external whenNotPaused onlyRole(BRIDGE_ROLE) {
         if (account == address(0)) revert ZeroAddress();
@@ -740,6 +776,7 @@ contract USDL is
 
     /**
      * @notice Set deposit fee
+     * @dev Fee is deducted from user deposits and transferred to the treasury address.
      * @param newFeeBps New deposit fee in basis points (max MAX_FEE_BPS = 5%)
      */
     function setDepositFee(uint256 newFeeBps) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -959,6 +996,7 @@ contract USDL is
 
     /**
      * @notice Get current share price (assets per share)
+     * @dev Calculates the price per share including accrued yield. Uses totalAssets() for numerator.
      * @return price Share price scaled by 1e6 (USDC decimals)
      */
     function sharePrice() external view returns (uint256 price) {
@@ -1452,6 +1490,11 @@ contract USDL is
      *      This ensures 1:1 share-to-asset ratio at initialization and
      *      maintains consistency with the underlying USDC asset.
      * @return uint8 Always returns 6 (USDC decimals)
+     */
+    /**
+     * @notice Returns the number of decimals used for USDL token
+     * @dev USDL uses 6 decimals to match USDC
+     * @return Number of decimals (6)
      */
     function decimals() public pure override(ERC20Upgradeable, IERC20Metadata) returns (uint8) {
         return 6;
