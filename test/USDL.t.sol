@@ -1439,8 +1439,6 @@ contract USDLTest is Test {
 
         // Second deposit - user gets shares at current rebase index
         uint256 depositAmount = 1000e6;
-        uint256 fee = (depositAmount * 10) / 10000;
-        uint256 netAssets = depositAmount - fee;
 
         vm.startPrank(user2);
         usdc.approve(address(usdlProxy), depositAmount);
