@@ -5,11 +5,11 @@ pragma solidity 0.8.23;
  * @title USDL - Yield-Bearing USD Vault
  * @notice ERC-4626 vault that accepts USDC and allocates to yield-bearing RWA assets
  * @dev Users deposit USDC, receive USDL shares. Share price increases as yield accrues.
- *      
+ *
  *      Example:
  *      - User deposits 1000 USDC at launch → gets 1000 USDL
  *      - After 1 year of 5% yield → 1000 USDL redeemable for 1050 USDC
- *      
+ *
  *      Supported yield assets:
  *      - ERC-4626 vaults (sDAI, Morpho, etc.)
  *      - Aave V3 (aUSDC)
@@ -17,11 +17,12 @@ pragma solidity 0.8.23;
  *
  * @custom:security-contact security@lendefimarkets.com
  */
-
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import {ERC20PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
-import {ERC20PermitUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import {ERC20PausableUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
+import {ERC20PermitUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -39,6 +40,7 @@ import {
     IOUSGInstantManager,
     IRWAOracle
 } from "../interfaces/IYieldProtocols.sol";
+import {AutomationCompatibleInterface} from "../interfaces/AutomationCompatibleInterface.sol";
 
 /// @custom:oz-upgrades
 contract USDL is
@@ -49,7 +51,8 @@ contract USDL is
     ERC20PermitUpgradeable,
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
-    UUPSUpgradeable
+    UUPSUpgradeable,
+    AutomationCompatibleInterface
 {
     using SafeERC20 for IERC20;
     using Math for uint256;
@@ -58,12 +61,12 @@ contract USDL is
 
     /// @notice Yield asset configuration
     struct YieldAsset {
-        address token;          // Yield-bearing token (sDAI, aUSDC, OUSG)
-        address depositToken;   // Token to deposit (USDC, DAI)
-        address manager;        // Manager contract (vault, pool, instant manager)
-        uint256 allocation;     // Target allocation in basis points
-        AssetType assetType;    // Protocol type for routing
-        bool active;            // Whether asset is accepting new deposits
+        address token; // Yield-bearing token (sDAI, aUSDC, OUSG)
+        address depositToken; // Token to deposit (USDC, DAI)
+        address manager; // Manager contract (vault, pool, instant manager)
+        uint256 allocation; // Target allocation in basis points
+        AssetType assetType; // Protocol type for routing
+        bool active; // Whether asset is accepting new deposits
     }
 
     // ============ Constants ============
@@ -76,6 +79,9 @@ contract USDL is
 
     /// @notice Maximum deposit fee in basis points (5%)
     uint256 public constant MAX_FEE_BPS = 500;
+
+    /// @notice Minimum interval allowed for automated yield accrual (1 hour)
+    uint256 public constant MIN_AUTOMATION_INTERVAL = 1 hours;
 
     /// @dev AccessControl Role Constants
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -112,8 +118,14 @@ contract USDL is
     /// @notice Yield asset configurations
     mapping(address token => YieldAsset config) public yieldAssets;
 
+    /// @notice Minimum interval (seconds) between automated yield accruals (0 disables automation)
+    uint256 public yieldAccrualInterval;
+
+    /// @notice Timestamp of last yield accrual (manual or automated)
+    uint256 public lastYieldAccrualTimestamp;
+
     /// @notice Storage gap for future upgrades
-    uint256[40] private __gap;
+    uint256[38] private __gap;
 
     // ============ Events ============
 
@@ -130,6 +142,7 @@ contract USDL is
     event InternalAccountingUpdated(uint256 oldAmount, uint256 newAmount);
     event YieldAccrued(uint256 yieldAmount, uint256 newTotalAssets);
     event DonatedTokensRescued(address indexed to, uint256 amount);
+    event YieldAccrualIntervalUpdated(uint256 oldInterval, uint256 newInterval);
 
     // ============ Errors ============
 
@@ -143,6 +156,8 @@ contract USDL is
     error InvalidAllocation(uint256 totalBps);
     error InvalidFee(uint256 fee);
     error InsufficientLiquidity(uint256 requested, uint256 available);
+    error AutomationIntervalTooShort(uint256 providedInterval);
+    error UpkeepNotNeeded();
 
     // ============ Modifiers ============
 
@@ -176,11 +191,7 @@ contract USDL is
      * @param _usdc USDC token address (underlying asset)
      * @param _treasury Treasury address for fees
      */
-    function initialize(
-        address _owner,
-        address _usdc,
-        address _treasury
-    ) external initializer {
+    function initialize(address _owner, address _usdc, address _treasury) external initializer {
         if (_owner == address(0)) revert ZeroAddress();
         if (_usdc == address(0)) revert ZeroAddress();
         if (_treasury == address(0)) revert ZeroAddress();
@@ -205,6 +216,10 @@ contract USDL is
 
         // Default deposit fee: 0.1%
         depositFeeBps = 10;
+
+        // Default automation settings: daily accruals
+        yieldAccrualInterval = 1 days;
+        lastYieldAccrualTimestamp = block.timestamp;
     }
 
     // ============ ERC-4626 Overrides ============
@@ -263,7 +278,9 @@ contract USDL is
         notBlacklisted(receiver)
         returns (uint256 shares)
     {
-        if (assets < MIN_DEPOSIT) revert BelowMinimumDeposit(assets, MIN_DEPOSIT);
+        if (assets < MIN_DEPOSIT) {
+            revert BelowMinimumDeposit(assets, MIN_DEPOSIT);
+        }
         if (receiver == address(0)) revert ZeroAddress();
         if (receiver == address(this)) revert InvalidRecipient(receiver);
 
@@ -312,12 +329,19 @@ contract USDL is
         if (receiver == address(0)) revert ZeroAddress();
         if (receiver == address(this)) revert InvalidRecipient(receiver);
 
+        if (hasRole(BRIDGE_ROLE, msg.sender)) {
+            _bridgeMint(receiver, shares);
+            return 0;
+        }
+
         // Calculate assets needed using internal accounting
         uint256 netAssets = _convertToAssetsInternal(shares, Math.Rounding.Ceil);
         uint256 fee = (netAssets * depositFeeBps) / (BASIS_POINTS - depositFeeBps);
         assets = netAssets + fee;
 
-        if (assets < MIN_DEPOSIT) revert BelowMinimumDeposit(assets, MIN_DEPOSIT);
+        if (assets < MIN_DEPOSIT) {
+            revert BelowMinimumDeposit(assets, MIN_DEPOSIT);
+        }
 
         // Transfer assets from sender
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), assets);
@@ -355,7 +379,9 @@ contract USDL is
     {
         if (assets == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroAddress();
-        if (assets > totalDepositedAssets) revert InsufficientLiquidity(assets, totalDepositedAssets);
+        if (assets > totalDepositedAssets) {
+            revert InsufficientLiquidity(assets, totalDepositedAssets);
+        }
 
         // Calculate shares to burn using internal accounting
         shares = _convertToSharesInternal(assets, Math.Rounding.Ceil);
@@ -404,7 +430,9 @@ contract USDL is
 
         // Calculate assets to return using internal accounting
         assets = _convertToAssetsInternal(shares, Math.Rounding.Floor);
-        if (assets > totalDepositedAssets) revert InsufficientLiquidity(assets, totalDepositedAssets);
+        if (assets > totalDepositedAssets) {
+            revert InsufficientLiquidity(assets, totalDepositedAssets);
+        }
 
         // Update internal accounting BEFORE redemption
         totalDepositedAssets -= assets;
@@ -424,39 +452,24 @@ contract USDL is
     // ============ CCIP Bridge Functions ============
 
     /**
-     * @notice Mint shares for CCIP bridge (burn-and-mint pattern)
-     * @param account Address to receive shares
-     * @param amount Amount of shares to mint
-     * @dev Only callable by BRIDGE_ROLE (CCIP Token Pool)
-     */
-    function bridgeMint(address account, uint256 amount)
-        external
-        whenNotPaused
-        onlyRole(BRIDGE_ROLE)
-        notBlacklisted(account)
-    {
-        if (account == address(0)) revert ZeroAddress();
-        if (amount == 0) revert ZeroAmount();
-        if (account == address(this)) revert InvalidRecipient(account);
-
-        _mint(account, amount);
-    }
-
-    /**
      * @notice Burn shares for CCIP bridge (burn-and-mint pattern)
      * @param account Address to burn from
      * @param amount Amount of shares to burn
      * @dev Only callable by BRIDGE_ROLE (CCIP Token Pool)
      */
-    function bridgeBurn(address account, uint256 amount)
-        external
-        whenNotPaused
-        onlyRole(BRIDGE_ROLE)
-    {
+    function burn(address account, uint256 amount) external whenNotPaused onlyRole(BRIDGE_ROLE) {
         if (account == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
 
         _burn(account, amount);
+    }
+
+    function _bridgeMint(address account, uint256 amount) internal {
+        if (account == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+        if (account == address(this)) revert InvalidRecipient(account);
+
+        _mint(account, amount);
     }
 
     // ============ Yield Asset Management ============
@@ -475,14 +488,10 @@ contract USDL is
         address manager,
         uint256 allocation,
         AssetType assetType
-    )
-        external
-        onlyRole(MANAGER_ROLE)
-        nonZeroAddress(token)
-        nonZeroAddress(depositToken)
-        nonZeroAddress(manager)
-    {
-        if (yieldAssets[token].token != address(0)) revert AssetAlreadyExists(token);
+    ) external onlyRole(MANAGER_ROLE) nonZeroAddress(token) nonZeroAddress(depositToken) nonZeroAddress(manager) {
+        if (yieldAssets[token].token != address(0)) {
+            revert AssetAlreadyExists(token);
+        }
 
         yieldAssets[token] = YieldAsset({
             token: token,
@@ -504,10 +513,7 @@ contract USDL is
      * @param token Yield asset token address
      * @param newAllocation New allocation in basis points
      */
-    function updateYieldAssetAllocation(address token, uint256 newAllocation)
-        external
-        onlyRole(MANAGER_ROLE)
-    {
+    function updateYieldAssetAllocation(address token, uint256 newAllocation) external onlyRole(MANAGER_ROLE) {
         if (yieldAssets[token].token == address(0)) revert AssetNotFound(token);
 
         yieldAssets[token].allocation = newAllocation;
@@ -535,7 +541,7 @@ contract USDL is
      */
     function removeYieldAsset(address token) external onlyRole(MANAGER_ROLE) {
         if (yieldAssets[token].token == address(0)) revert AssetNotFound(token);
-        
+
         // Ensure no funds remain in this yield asset
         uint256 balance = IERC20(token).balanceOf(address(this));
         require(balance == 0, "Withdraw funds first");
@@ -586,6 +592,21 @@ contract USDL is
         address oldTreasury = treasury;
         treasury = newTreasury;
         emit TreasuryUpdated(oldTreasury, newTreasury);
+    }
+
+    /**
+     * @notice Configure the interval used by Chainlink Automation for yield accruals
+     * @param newInterval Interval in seconds. Set to 0 to disable automation.
+     * @dev Minimum non-zero interval is 1 hour to avoid spamming keepers
+     */
+    function setYieldAccrualInterval(uint256 newInterval) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newInterval != 0 && newInterval < MIN_AUTOMATION_INTERVAL) {
+            revert AutomationIntervalTooShort(newInterval);
+        }
+
+        uint256 oldInterval = yieldAccrualInterval;
+        yieldAccrualInterval = newInterval;
+        emit YieldAccrualIntervalUpdated(oldInterval, newInterval);
     }
 
     /**
@@ -650,16 +671,94 @@ contract USDL is
      *      totalDepositedAssets to reflect accrued yield. Should be called periodically.
      *      Only increases totalDepositedAssets (yield accrual), never decreases.
      */
-    function accrueYield() external onlyRole(MANAGER_ROLE) {
-        uint256 actualValue = _calculateActualYieldValue();
+    /**
+     * @notice Accrues realized yield from underlying protocols into totalDepositedAssets
+     * @dev Callable by MANAGER_ROLE for manual rebases; Chainlink Automation uses performUpkeep()
+     * @return yieldAccrued Amount of yield (in USDC) that was added to internal accounting
+     */
+    function accrueYield() external onlyRole(MANAGER_ROLE) returns (uint256 yieldAccrued) {
+        (yieldAccrued,) = _accrueYieldInternal();
+    }
+
+    /**
+     * @inheritdoc AutomationCompatibleInterface
+     */
+    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
+        bool shouldAccrue;
+        uint256 actualValue;
+        uint256 currentDeposited;
+        (shouldAccrue, actualValue, currentDeposited) = _shouldAccrueYield();
+
+        if (shouldAccrue) {
+            upkeepNeeded = true;
+            performData = abi.encode(actualValue, currentDeposited);
+        }
+    }
+
+    /**
+     * @inheritdoc AutomationCompatibleInterface
+     */
+    function performUpkeep(bytes calldata) external override {
+        (bool upkeepNeeded,,) = _shouldAccrueYield();
+        if (!upkeepNeeded) revert UpkeepNotNeeded();
+
+        _accrueYieldInternal();
+    }
+
+    /**
+     * @notice Determines whether automated yield accrual should run
+     * @dev Used by Chainlink Automation to avoid unnecessary performUpkeep() calls
+     * @return upkeepNeeded True when interval elapsed and there is positive yield delta
+     * @return actualValue Aggregate value of yield assets (USDC 6 decimals)
+     * @return currentDeposited Currently tracked totalDepositedAssets value
+     */
+    function _shouldAccrueYield()
+        internal
+        view
+        returns (bool upkeepNeeded, uint256 actualValue, uint256 currentDeposited)
+    {
+        uint256 interval = yieldAccrualInterval;
+        if (interval == 0) {
+            return (false, 0, totalDepositedAssets);
+        }
+
+        if (block.timestamp - lastYieldAccrualTimestamp < interval) {
+            return (false, 0, totalDepositedAssets);
+        }
+
+        actualValue = _calculateActualYieldValue();
+        currentDeposited = totalDepositedAssets;
+        upkeepNeeded = actualValue > currentDeposited;
+    }
+
+    /**
+     * @notice Internal helper that updates totalDepositedAssets to match actual yield value
+     * @dev Shared by manual accruals and Chainlink Automation
+     * @return yieldAccrued Amount of yield realized during this call
+     * @return actualValue Full vault value after accrual (USDC 6 decimals)
+     */
+    function _accrueYieldInternal() internal returns (uint256 yieldAccrued, uint256 actualValue) {
+        actualValue = _calculateActualYieldValue();
         uint256 currentDeposited = totalDepositedAssets;
-        
-        // Only accrue if there's positive yield (actual value > tracked deposits)
+
+        lastYieldAccrualTimestamp = block.timestamp;
+
         if (actualValue > currentDeposited) {
-            uint256 yieldAccrued = actualValue - currentDeposited;
+            yieldAccrued = actualValue - currentDeposited;
+            // Pull realized gains back into USDC before updating accounting
+            _harvestYield(yieldAccrued);
             totalDepositedAssets = actualValue;
             emit YieldAccrued(yieldAccrued, actualValue);
         }
+    }
+
+    /**
+     * @notice Withdraws accrued yield from external protocols into USDC held by this contract
+     * @dev Reuses the redemption waterfall to realize profits before updating internal accounting
+     */
+    function _harvestYield(uint256 amount) internal {
+        if (amount == 0) return;
+        _redeemFromYieldAssets(amount, false);
     }
 
     /**
@@ -671,7 +770,7 @@ contract USDL is
         IERC20 usdc = IERC20(asset());
         uint256 balance = usdc.balanceOf(address(this));
         uint256 tracked = totalDepositedAssets;
-        
+
         // Can only rescue excess tokens (donations)
         if (balance > tracked) {
             uint256 excess = balance - tracked;
@@ -715,7 +814,7 @@ contract USDL is
     function sharePrice() external view returns (uint256 price) {
         uint256 supply = totalSupply();
         if (supply == 0) return 1e6; // 1:1 initially
-        
+
         price = (totalAssets() * 1e6) / supply;
     }
 
@@ -736,12 +835,10 @@ contract USDL is
         override(AccessControlUpgradeable, IERC165)
         returns (bool)
     {
-        return 
-            interfaceId == type(IERC20).interfaceId ||
-            interfaceId == type(IERC4626).interfaceId ||
-            interfaceId == type(IERC165).interfaceId ||
-            interfaceId == type(IAccessControl).interfaceId ||
-            interfaceId == type(IGetCCIPAdmin).interfaceId;
+        return interfaceId == type(IERC20).interfaceId || interfaceId == type(IERC4626).interfaceId
+            || interfaceId == type(IERC165).interfaceId || interfaceId == type(IAccessControl).interfaceId
+            || interfaceId == type(IGetCCIPAdmin).interfaceId
+            || interfaceId == type(AutomationCompatibleInterface).interfaceId;
     }
 
     // ============ Internal Functions ============
@@ -757,12 +854,12 @@ contract USDL is
     function _convertToSharesInternal(uint256 assets, Math.Rounding rounding) internal view returns (uint256 shares) {
         uint256 supply = totalSupply();
         uint256 depositedAssets = totalDepositedAssets;
-        
+
         // If no shares exist, 1:1 ratio
         if (supply == 0 || depositedAssets == 0) {
             return assets;
         }
-        
+
         // shares = assets * totalSupply / totalDepositedAssets
         return assets.mulDiv(supply, depositedAssets, rounding);
     }
@@ -778,12 +875,12 @@ contract USDL is
     function _convertToAssetsInternal(uint256 shares, Math.Rounding rounding) internal view returns (uint256 assets) {
         uint256 supply = totalSupply();
         uint256 depositedAssets = totalDepositedAssets;
-        
+
         // If no shares exist, 1:1 ratio
         if (supply == 0 || depositedAssets == 0) {
             return shares;
         }
-        
+
         // assets = shares * totalDepositedAssets / totalSupply
         return shares.mulDiv(depositedAssets, supply, rounding);
     }
@@ -799,12 +896,12 @@ contract USDL is
         for (uint256 i = 0; i < length; i++) {
             address token = yieldAssetList[i];
             YieldAsset storage yieldAsset = yieldAssets[token];
-            
+
             if (!yieldAsset.active) continue;
-            
+
             total += _getYieldAssetValue(yieldAsset);
         }
-        
+
         // Add USDC held directly (only the tracked portion, not donations)
         // We use min(balance, totalDepositedAssets) to avoid counting donations
         uint256 usdcBalance = IERC20(asset()).balanceOf(address(this));
@@ -835,18 +932,16 @@ contract USDL is
     function _getYieldAssetValue(YieldAsset storage yieldAsset) internal view returns (uint256 value) {
         IERC20 yieldToken = IERC20(yieldAsset.token);
         uint256 balance = yieldToken.balanceOf(address(this));
-        
+
         if (balance == 0) return 0;
 
         if (yieldAsset.assetType == AssetType.ERC4626) {
             // ERC-4626: convertToAssets gives underlying value
             value = IExternalERC4626(yieldAsset.manager).convertToAssets(balance);
-        } 
-        else if (yieldAsset.assetType == AssetType.AAVE_V3) {
+        } else if (yieldAsset.assetType == AssetType.AAVE_V3) {
             // Aave aTokens are 1:1 with underlying (they rebase)
             value = balance;
-        } 
-        else if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
+        } else if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
             // OUSG - use RWA oracle for price (Chainlink-compatible, 8 decimals)
             // yieldAsset.manager stores the oracle address for OUSG
             IRWAOracle oracle = IRWAOracle(yieldAsset.manager);
@@ -954,16 +1049,9 @@ contract USDL is
 
         if (yieldAsset.assetType == AssetType.ERC4626) {
             IExternalERC4626(yieldAsset.manager).deposit(amount, address(this));
-        } 
-        else if (yieldAsset.assetType == AssetType.AAVE_V3) {
-            IAaveV3Pool(yieldAsset.manager).supply(
-                yieldAsset.depositToken,
-                amount,
-                address(this),
-                0
-            );
-        } 
-        else if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
+        } else if (yieldAsset.assetType == AssetType.AAVE_V3) {
+            IAaveV3Pool(yieldAsset.manager).supply(yieldAsset.depositToken, amount, address(this), 0);
+        } else if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
             IOUSGInstantManager(yieldAsset.manager).mint(amount);
         }
     }
@@ -996,13 +1084,22 @@ contract USDL is
      *   - Prevents silent failures from illiquid yield protocols
      */
     function _redeemFromYieldAssets(uint256 amount) internal {
+        _redeemFromYieldAssets(amount, true);
+    }
+
+    /**
+     * @notice Internal variant that supports best-effort withdrawals (used for harvesting)
+     * @param amount Total USDC amount requested
+     * @param enforceExactAmount When false, allows rounding shortfalls instead of reverting
+     */
+    function _redeemFromYieldAssets(uint256 amount, bool enforceExactAmount) internal {
         IERC20 usdc = IERC20(asset());
         uint256 length = yieldAssetList.length;
 
         // First, check if we have enough USDC held directly
         uint256 usdcBalanceBefore = usdc.balanceOf(address(this));
         if (usdcBalanceBefore >= amount) return; // Have enough USDC
-        
+
         uint256 remaining = amount - usdcBalanceBefore;
 
         for (uint256 i = 0; i < length && remaining > 0; i++) {
@@ -1027,7 +1124,7 @@ contract USDL is
 
         // H-01 Fix: Final verification that we have enough USDC
         uint256 finalBalance = usdc.balanceOf(address(this));
-        if (finalBalance < amount) {
+        if (enforceExactAmount && finalBalance < amount) {
             revert InsufficientLiquidity(amount, finalBalance);
         }
     }
@@ -1061,24 +1158,18 @@ contract USDL is
     function _redeemFromYieldAsset(YieldAsset storage yieldAsset, uint256 amount) internal {
         IERC20 yieldToken = IERC20(yieldAsset.token);
         uint256 balance = yieldToken.balanceOf(address(this));
-        
+
         if (balance == 0) return;
 
         if (yieldAsset.assetType == AssetType.ERC4626) {
             uint256 sharesToRedeem = IExternalERC4626(yieldAsset.manager).convertToShares(amount);
             if (sharesToRedeem > balance) sharesToRedeem = balance;
             IExternalERC4626(yieldAsset.manager).redeem(sharesToRedeem, address(this), address(this));
-        } 
-        else if (yieldAsset.assetType == AssetType.AAVE_V3) {
+        } else if (yieldAsset.assetType == AssetType.AAVE_V3) {
             uint256 withdrawAmount = amount > balance ? balance : amount;
             yieldToken.safeIncreaseAllowance(yieldAsset.manager, withdrawAmount);
-            IAaveV3Pool(yieldAsset.manager).withdraw(
-                yieldAsset.depositToken,
-                withdrawAmount,
-                address(this)
-            );
-        } 
-        else if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
+            IAaveV3Pool(yieldAsset.manager).withdraw(yieldAsset.depositToken, withdrawAmount, address(this));
+        } else if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
             yieldToken.safeIncreaseAllowance(yieldAsset.manager, balance);
             IOUSGInstantManager(yieldAsset.manager).redeem(balance);
         }
@@ -1120,9 +1211,11 @@ contract USDL is
         internal
         override(ERC20Upgradeable, ERC20PausableUpgradeable)
     {
-        if (from != address(0) && blacklisted[from]) revert AddressBlacklisted(from);
+        if (from != address(0) && blacklisted[from]) {
+            revert AddressBlacklisted(from);
+        }
         if (to != address(0) && blacklisted[to]) revert AddressBlacklisted(to);
-        
+
         super._update(from, to, value);
     }
 

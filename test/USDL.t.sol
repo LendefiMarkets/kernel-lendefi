@@ -121,7 +121,6 @@ contract USDLTest is Test {
     address public pauser = address(0x8);
     address public upgrader = address(0x9);
     address public blacklister = address(0xA);
-
     uint256 public constant INITIAL_USDC = 100_000e6;
 
     function setUp() public {
@@ -144,6 +143,23 @@ contract USDLTest is Test {
 
         usdc.mint(user1, INITIAL_USDC);
         usdc.mint(user2, INITIAL_USDC);
+    }
+
+    function _addDefaultYieldAsset() internal {
+        vm.prank(manager);
+        usdlProxy.addYieldAsset(address(yieldVault), address(usdc), address(yieldVault), 10000, AssetType.ERC4626);
+    }
+
+    function _userDeposit(address user, uint256 amount) internal {
+        vm.startPrank(user);
+        usdc.approve(address(usdlProxy), amount);
+        usdlProxy.deposit(amount, user);
+        vm.stopPrank();
+    }
+
+    function _warpPastInterval() internal {
+        uint256 interval = usdlProxy.yieldAccrualInterval();
+        vm.warp(block.timestamp + interval + 1);
     }
 
     // ============ Initialization Tests (6) ============
@@ -516,32 +532,27 @@ contract USDLTest is Test {
     // ============ Bridge Tests (11) ============
     function test_BridgeMint() public {
         vm.prank(bridge);
-        usdlProxy.bridgeMint(user1, 1000e6);
+        uint256 assets = usdlProxy.mint(1000e6, user1);
+        assertEq(assets, 0);
         assertEq(usdlProxy.balanceOf(user1), 1000e6);
     }
 
     function test_BridgeMintZeroAddressReverts() public {
         vm.prank(bridge);
         vm.expectRevert(USDL.ZeroAddress.selector);
-        usdlProxy.bridgeMint(address(0), 1000e6);
+        usdlProxy.mint(1000e6, address(0));
     }
 
     function test_BridgeMintZeroAmountReverts() public {
         vm.prank(bridge);
         vm.expectRevert(USDL.ZeroAmount.selector);
-        usdlProxy.bridgeMint(user1, 0);
+        usdlProxy.mint(0, user1);
     }
 
     function test_BridgeMintToContractReverts() public {
         vm.prank(bridge);
         vm.expectRevert(abi.encodeWithSelector(USDL.InvalidRecipient.selector, address(usdlProxy)));
-        usdlProxy.bridgeMint(address(usdlProxy), 1000e6);
-    }
-
-    function test_BridgeMintNotBridgeReverts() public {
-        vm.prank(user1);
-        vm.expectRevert();
-        usdlProxy.bridgeMint(user1, 1000e6);
+        usdlProxy.mint(1000e6, address(usdlProxy));
     }
 
     function test_BridgeMintBlacklistedReverts() public {
@@ -550,7 +561,7 @@ contract USDLTest is Test {
 
         vm.prank(bridge);
         vm.expectRevert(abi.encodeWithSelector(USDL.AddressBlacklisted.selector, user1));
-        usdlProxy.bridgeMint(user1, 1000e6);
+        usdlProxy.mint(1000e6, user1);
     }
 
     function test_BridgeMintWhenPausedReverts() public {
@@ -559,34 +570,43 @@ contract USDLTest is Test {
 
         vm.prank(bridge);
         vm.expectRevert();
-        usdlProxy.bridgeMint(user1, 1000e6);
+        usdlProxy.mint(1000e6, user1);
+    }
+
+    function test_BridgeMintRequiresRole() public {
+        vm.prank(owner);
+        usdlProxy.revokeBridgeRole(bridge);
+
+        vm.prank(bridge);
+        vm.expectRevert();
+        usdlProxy.mint(1000e6, user1);
     }
 
     function test_BridgeBurn() public {
         vm.prank(bridge);
-        usdlProxy.bridgeMint(user1, 1000e6);
+        usdlProxy.mint(1000e6, user1);
 
         vm.prank(bridge);
-        usdlProxy.bridgeBurn(user1, 500e6);
+        usdlProxy.burn(user1, 500e6);
         assertEq(usdlProxy.balanceOf(user1), 500e6);
     }
 
     function test_BridgeBurnZeroAddressReverts() public {
         vm.prank(bridge);
         vm.expectRevert(USDL.ZeroAddress.selector);
-        usdlProxy.bridgeBurn(address(0), 1000e6);
+        usdlProxy.burn(address(0), 1000e6);
     }
 
     function test_BridgeBurnZeroAmountReverts() public {
         vm.prank(bridge);
         vm.expectRevert(USDL.ZeroAmount.selector);
-        usdlProxy.bridgeBurn(user1, 0);
+        usdlProxy.burn(user1, 0);
     }
 
     function test_BridgeBurnNotBridgeReverts() public {
         vm.prank(user1);
         vm.expectRevert();
-        usdlProxy.bridgeBurn(user1, 1000e6);
+        usdlProxy.burn(user1, 1000e6);
     }
 
     // ============ Yield Asset Tests (12) ============
@@ -685,10 +705,10 @@ contract USDLTest is Test {
     function test_RemoveYieldAsset() public {
         vm.startPrank(manager);
         usdlProxy.addYieldAsset(address(yieldVault), address(usdc), address(yieldVault), 10000, AssetType.ERC4626);
-        
+
         // Should be in the list
         assertEq(usdlProxy.getYieldAssetCount(), 1);
-        
+
         // Remove it (no funds in it)
         usdlProxy.removeYieldAsset(address(yieldVault));
         vm.stopPrank();
@@ -732,14 +752,14 @@ contract USDLTest is Test {
         vm.stopPrank();
 
         uint256 sharePriceBefore = usdlProxy.sharePrice();
-        
+
         // Simulate yield in the underlying vault
-        yieldVault.setYieldMultiplier(1.10e18);
-        
+        yieldVault.setYieldMultiplier(1.1e18);
+
         // Accrue yield to update internal accounting
         vm.prank(manager);
         usdlProxy.accrueYield();
-        
+
         uint256 sharePriceAfter = usdlProxy.sharePrice();
 
         assertGt(sharePriceAfter, sharePriceBefore, "Share price should increase after yield accrual");
@@ -755,15 +775,33 @@ contract USDLTest is Test {
         vm.stopPrank();
 
         uint256 before = usdlProxy.totalAssets();
-        
+
         // Simulate yield in the underlying vault
-        yieldVault.setYieldMultiplier(1.10e18);
-        
+        yieldVault.setYieldMultiplier(1.1e18);
+
         // Accrue yield to update internal accounting
         vm.prank(manager);
         usdlProxy.accrueYield();
-        
+
         assertGt(usdlProxy.totalAssets(), before, "Total assets should increase after yield accrual");
+    }
+
+    function test_AccrueYieldHarvestsUSDC() public {
+        _addDefaultYieldAsset();
+        _userDeposit(user1, 1000e6);
+
+        uint256 netDeposited = usdlProxy.totalAssets();
+        assertEq(usdc.balanceOf(address(usdlProxy)), 0, "all funds allocated to yield assets");
+
+        uint256 multiplier = 1.05e18;
+        yieldVault.setYieldMultiplier(multiplier);
+
+        vm.prank(manager);
+        usdlProxy.accrueYield();
+
+        uint256 expectedYield = (netDeposited * (multiplier - 1e18)) / 1e18;
+        assertApproxEqAbs(usdc.balanceOf(address(usdlProxy)), expectedYield, 1, "harvested yield should sit in USDC");
+        assertEq(usdlProxy.totalAssets(), netDeposited + expectedYield, "accounting reflects realized yield");
     }
 
     function test_DepositAllocatesToYieldAsset() public {
@@ -883,9 +921,9 @@ contract USDLTest is Test {
         // Bridge mints shares (without backing assets)
         vm.prank(owner);
         usdlProxy.grantBridgeRole(bridge);
-        
+
         vm.prank(bridge);
-        usdlProxy.bridgeMint(user2, 1000e6);
+        usdlProxy.mint(1000e6, user2);
 
         // Share price should DECREASE (more shares, same assets)
         // This is correct behavior - bridge mints dilute share price
@@ -909,7 +947,7 @@ contract USDLTest is Test {
 
         // Bridge burns some of user1's shares (simulating cross-chain transfer out)
         vm.prank(bridge);
-        usdlProxy.bridgeBurn(user1, 500e6);
+        usdlProxy.burn(user1, 500e6);
 
         // Total assets should NOT change (internal accounting tracks deposits, not supply)
         uint256 totalAssetsAfter = usdlProxy.totalAssets();
@@ -931,7 +969,7 @@ contract USDLTest is Test {
 
         // Bridge burns some shares (simulating cross-chain transfer out)
         vm.prank(bridge);
-        usdlProxy.bridgeBurn(user1, 500e6);
+        usdlProxy.burn(user1, 500e6);
 
         // Price should INCREASE (fewer shares, same assets)
         uint256 priceAfter = usdlProxy.getPrice();
@@ -955,18 +993,18 @@ contract USDLTest is Test {
 
         // Simulate bridging out (burn on source chain)
         vm.prank(bridge);
-        usdlProxy.bridgeBurn(user1, 300e6);
+        usdlProxy.burn(user1, 300e6);
 
         // Simulate bridging in (mint on destination chain, but we're simulating it here)
         vm.prank(bridge);
-        usdlProxy.bridgeMint(user2, 300e6);
+        usdlProxy.mint(300e6, user2);
 
         // After complete cycle: supply should be back to initial
         assertEq(usdlProxy.totalSupply(), initialSupply, "Supply should be restored after mint/burn cycle");
-        
+
         // Total assets should be unchanged (internal accounting)
         assertEq(usdlProxy.totalAssets(), initialTotalAssets, "Total assets unchanged after bridge cycle");
-        
+
         // Price should be restored
         assertEq(usdlProxy.getPrice(), initialPrice, "Price should be restored after bridge cycle");
     }
@@ -986,9 +1024,9 @@ contract USDLTest is Test {
 
         // Multiple bridge mints (simulating incoming cross-chain transfers)
         vm.startPrank(bridge);
-        usdlProxy.bridgeMint(user2, 500e6);
-        usdlProxy.bridgeMint(user2, 300e6);
-        usdlProxy.bridgeMint(user2, 200e6);
+        usdlProxy.mint(500e6, user2);
+        usdlProxy.mint(300e6, user2);
+        usdlProxy.mint(200e6, user2);
         vm.stopPrank();
 
         // Total assets should NOT change
@@ -996,7 +1034,7 @@ contract USDLTest is Test {
 
         // Now bridge burns
         vm.startPrank(bridge);
-        usdlProxy.bridgeBurn(user2, 1000e6); // Burn all that was minted
+        usdlProxy.burn(user2, 1000e6); // Burn all that was minted
         vm.stopPrank();
 
         // Total assets still unchanged
@@ -1017,9 +1055,9 @@ contract USDLTest is Test {
         // Setup bridge and mint extra shares to user2
         vm.prank(owner);
         usdlProxy.grantBridgeRole(bridge);
-        
+
         vm.prank(bridge);
-        usdlProxy.bridgeMint(user2, 1000e6);
+        usdlProxy.mint(1000e6, user2);
 
         // Now user1 tries to redeem all their shares
         // They should get proportional share of totalDepositedAssets
@@ -1057,7 +1095,7 @@ contract USDLTest is Test {
         vm.prank(owner);
         usdlProxy.grantBridgeRole(bridge);
         vm.prank(bridge);
-        usdlProxy.bridgeMint(user2, 10000e6);
+        usdlProxy.mint(10000e6, user2);
         assertEq(usdlProxy.totalAssets(), afterDeposit, "Bridge mint should not affect totalAssets");
 
         // Yield accrual
@@ -1070,7 +1108,7 @@ contract USDLTest is Test {
 
         // Bridge burn
         vm.prank(bridge);
-        usdlProxy.bridgeBurn(user2, 5000e6);
+        usdlProxy.burn(user2, 5000e6);
 
         // Total assets unchanged by burn
         uint256 afterYield = usdlProxy.totalAssets();
@@ -1081,6 +1119,64 @@ contract USDLTest is Test {
         vm.prank(user1);
         vm.expectRevert();
         usdlProxy.accrueYield();
+    }
+
+    // ============ Automation Tests (5) ============
+
+    function test_CheckUpkeepFalseBeforeInterval() public {
+        _addDefaultYieldAsset();
+        _userDeposit(user1, 1_000e6);
+        yieldVault.setYieldMultiplier(1.1e18);
+
+        (bool upkeepNeeded,) = usdlProxy.checkUpkeep("");
+        assertFalse(upkeepNeeded);
+    }
+
+    function test_CheckUpkeepFalseWithoutYield() public {
+        _addDefaultYieldAsset();
+        _userDeposit(user1, 1_000e6);
+        _warpPastInterval();
+
+        (bool upkeepNeeded,) = usdlProxy.checkUpkeep("");
+        assertFalse(upkeepNeeded);
+    }
+
+    function test_PerformUpkeepAccruesYield() public {
+        _addDefaultYieldAsset();
+        _userDeposit(user1, 1_000e6);
+        yieldVault.setYieldMultiplier(1.1e18);
+        _warpPastInterval();
+
+        uint256 beforeAssets = usdlProxy.totalAssets();
+        usdlProxy.performUpkeep("");
+        uint256 afterAssets = usdlProxy.totalAssets();
+
+        assertGt(afterAssets, beforeAssets, "automation should accrue yield");
+    }
+
+    function test_PerformUpkeepRevertsWhenNotNeeded() public {
+        _addDefaultYieldAsset();
+        _userDeposit(user1, 1_000e6);
+
+        vm.expectRevert(USDL.UpkeepNotNeeded.selector);
+        usdlProxy.performUpkeep("");
+    }
+
+    function test_SetYieldAccrualIntervalValidationAndDisable() public {
+        vm.startPrank(owner);
+        vm.expectRevert(abi.encodeWithSelector(USDL.AutomationIntervalTooShort.selector, 10));
+        usdlProxy.setYieldAccrualInterval(10);
+
+        usdlProxy.setYieldAccrualInterval(0);
+        vm.stopPrank();
+
+        _addDefaultYieldAsset();
+        _userDeposit(user1, 1_000e6);
+        yieldVault.setYieldMultiplier(1.1e18);
+
+        vm.warp(block.timestamp + 30 days);
+        (bool upkeepNeeded,) = usdlProxy.checkUpkeep("");
+        assertFalse(upkeepNeeded, "automation disabled via interval = 0");
     }
 
     // ============ Blacklist Tests (6) ============
@@ -1268,7 +1364,7 @@ contract USDLTest is Test {
 
         // Simulate 10% yield (multiply by 1.1)
         yieldVault.setYieldMultiplier(1.1e18);
-        
+
         // Accrue yield to update internal accounting
         vm.prank(manager);
         usdlProxy.accrueYield();
@@ -1574,21 +1670,21 @@ contract USDLTest is Test {
         vm.startPrank(manager);
         usdlProxy.addYieldAsset(address(yieldVault), address(usdc), address(yieldVault), 5000, AssetType.ERC4626);
         usdlProxy.addYieldAsset(address(yieldVault2), address(usdc), address(yieldVault2), 5000, AssetType.ERC4626);
-        
+
         // Deactivate the LAST asset
         usdlProxy.deactivateYieldAsset(address(yieldVault2));
         vm.stopPrank();
-        
+
         // Deposit - should allocate ALL to the first (and only active) asset
         vm.startPrank(user1);
         usdc.approve(address(usdlProxy), 1000e6);
         usdlProxy.deposit(1000e6, user1);
         vm.stopPrank();
-        
+
         // First vault should have received the deposit (minus fee)
         uint256 fee = (1000e6 * 10) / 10000;
         uint256 expectedDeposit = 1000e6 - fee;
-        
+
         // The first active vault should get ALL the funds (not just 50%)
         assertEq(yieldVault.balanceOf(address(usdlProxy)), expectedDeposit, "First vault should get all funds");
         assertEq(yieldVault2.balanceOf(address(usdlProxy)), 0, "Inactive vault should have 0");
@@ -1596,21 +1692,21 @@ contract USDLTest is Test {
 
     // H-01: Test withdrawal verification works
     function test_WithdrawalVerifiesActualRedemption() public {
-        // Add yield asset  
+        // Add yield asset
         vm.prank(manager);
         usdlProxy.addYieldAsset(address(yieldVault), address(usdc), address(yieldVault), 10000, AssetType.ERC4626);
-        
+
         // Deposit
         vm.startPrank(user1);
         usdc.approve(address(usdlProxy), 1000e6);
         usdlProxy.deposit(1000e6, user1);
         vm.stopPrank();
-        
+
         // Normal withdrawal should work - the H-01 fix verifies actual redemption
         uint256 shares = usdlProxy.balanceOf(user1);
         vm.prank(user1);
         usdlProxy.redeem(shares / 2, user1, user1);
-        
+
         // Verify user got their USDC back
         assertGt(usdc.balanceOf(user1), INITIAL_USDC - 1000e6, "User should have received USDC");
     }
