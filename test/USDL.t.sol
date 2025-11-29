@@ -632,7 +632,7 @@ contract USDLTest is Test {
         vm.startPrank(user1);
         usdc.approve(address(usdlProxy), 1000e6);
         usdlProxy.deposit(1000e6, user1);
-        
+
         // User approves bridge to burn
         usdlProxy.approve(bridge, 500e6);
         vm.stopPrank();
@@ -815,7 +815,7 @@ contract USDLTest is Test {
 
         assertGt(rebaseIndexAfter, rebaseIndexBefore, "Rebase index should increase after yield accrual");
         assertGt(balanceAfter, balanceBefore, "User balance should increase after yield accrual");
-        
+
         // Share price stays ~1:1 because both totalAssets and totalSupply increase
         uint256 sharePriceAfter = usdlProxy.sharePrice();
         assertApproxEqAbs(sharePriceAfter, 1e6, 1000, "Share price stays ~1:1 with rebasing");
@@ -1453,12 +1453,12 @@ contract USDLTest is Test {
         // The end result is that user2's balance reflects the current rebase index
         uint256 user2Balance = usdlProxy.balanceOf(user2);
         uint256 user2RawShares = usdlProxy.sharesOf(user2);
-        
+
         // User2's raw shares should approximately equal netAssets adjusted for current ratio
         // And their rebased balance = rawShares * rebaseIndex / 1e6
         uint256 expectedBalance = (user2RawShares * rebaseIndexAfter) / 1e6;
         assertApproxEqAbs(user2Balance, expectedBalance, 1000, "User2 balance should match shares * rebaseIndex");
-        
+
         // The raw shares should be approximately netAssets (since totalSupply/totalDepositedAssets ≈ 1)
         assertGt(shares, 0, "User2 should receive shares");
     }
@@ -1635,10 +1635,10 @@ contract USDLTest is Test {
         usdlProxy.accrueYield();
 
         uint256 balanceAfter = usdlProxy.balanceOf(user1);
-        
+
         // Balance increases with yield (rebasing)
         assertGt(balanceAfter, balanceBefore, "Balance should increase with yield");
-        
+
         // Price stays ~1:1 (rebasing token)
         uint256 priceAfter = usdlProxy.getPrice();
         assertApproxEqAbs(priceAfter, 1e6, 1000, "Price stays ~1:1 with rebasing");

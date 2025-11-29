@@ -35,10 +35,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IGetCCIPAdmin} from "../interfaces/IGetCCIPAdmin.sol";
 import {IBurnMintERC20} from "../interfaces/IBurnMintERC20.sol";
 import {
-    AssetType,
-    IERC4626 as IExternalERC4626,
-    IOUSGInstantManager,
-    IRWAOracle
+    AssetType, IERC4626 as IExternalERC4626, IOUSGInstantManager, IRWAOracle
 } from "../interfaces/IYieldProtocols.sol";
 import {AutomationCompatibleInterface} from "../interfaces/AutomationCompatibleInterface.sol";
 
@@ -829,15 +826,15 @@ contract USDL is
             yieldAccrued = actualValue - currentDeposited;
             // Pull realized gains back into USDC before updating accounting
             _harvestYield(yieldAccrued);
-            
+
             // Update rebase index proportionally to distribute yield to all holders
             // newIndex = oldIndex * actualValue / currentDeposited
             uint256 oldIndex = rebaseIndex;
             uint256 newIndex = (oldIndex * actualValue) / currentDeposited;
             rebaseIndex = newIndex;
-            
+
             totalDepositedAssets = actualValue;
-            
+
             emit RebaseIndexUpdated(oldIndex, newIndex);
             emit YieldAccrued(yieldAccrued, actualValue);
         }
@@ -1271,11 +1268,9 @@ contract USDL is
         IExternalERC4626(yieldAsset.manager).deposit(amount, address(this));
     }
 
-    function _withdrawFromERC4626Vault(
-        YieldAsset storage yieldAsset,
-        uint256 requestedAssets,
-        uint256 shareBalance
-    ) internal {
+    function _withdrawFromERC4626Vault(YieldAsset storage yieldAsset, uint256 requestedAssets, uint256 shareBalance)
+        internal
+    {
         if (shareBalance == 0 || requestedAssets == 0) {
             return;
         }
@@ -1350,11 +1345,15 @@ contract USDL is
      * @dev Converts rebased amount to raw shares before transfer
      *      Note: Allowances are in rebased amounts for user convenience
      * @param from Sender address
-     * @param to Recipient address  
+     * @param to Recipient address
      * @param value Rebased amount to transfer
      * @return True if successful
      */
-    function transferFrom(address from, address to, uint256 value) public override(ERC20Upgradeable, IERC20) returns (bool) {
+    function transferFrom(address from, address to, uint256 value)
+        public
+        override(ERC20Upgradeable, IERC20)
+        returns (bool)
+    {
         uint256 rawShares = _toRawShares(value);
         // Spend allowance in rebased terms (what user approved)
         _spendAllowance(from, _msgSender(), value);
