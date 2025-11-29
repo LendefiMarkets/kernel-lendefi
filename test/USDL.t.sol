@@ -532,27 +532,26 @@ contract USDLTest is Test {
     // ============ Bridge Tests (11) ============
     function test_BridgeMint() public {
         vm.prank(bridge);
-        uint256 assets = usdlProxy.mint(1000e6, user1);
-        assertEq(assets, 0);
+        usdlProxy.mint(user1, 1000e6);
         assertEq(usdlProxy.balanceOf(user1), 1000e6);
     }
 
     function test_BridgeMintZeroAddressReverts() public {
         vm.prank(bridge);
         vm.expectRevert(USDL.ZeroAddress.selector);
-        usdlProxy.mint(1000e6, address(0));
+        usdlProxy.mint(address(0), 1000e6);
     }
 
     function test_BridgeMintZeroAmountReverts() public {
         vm.prank(bridge);
         vm.expectRevert(USDL.ZeroAmount.selector);
-        usdlProxy.mint(0, user1);
+        usdlProxy.mint(user1, 0);
     }
 
     function test_BridgeMintToContractReverts() public {
         vm.prank(bridge);
         vm.expectRevert(abi.encodeWithSelector(USDL.InvalidRecipient.selector, address(usdlProxy)));
-        usdlProxy.mint(1000e6, address(usdlProxy));
+        usdlProxy.mint(address(usdlProxy), 1000e6);
     }
 
     function test_BridgeMintBlacklistedReverts() public {
@@ -561,7 +560,7 @@ contract USDLTest is Test {
 
         vm.prank(bridge);
         vm.expectRevert(abi.encodeWithSelector(USDL.AddressBlacklisted.selector, user1));
-        usdlProxy.mint(1000e6, user1);
+        usdlProxy.mint(user1, 1000e6);
     }
 
     function test_BridgeMintWhenPausedReverts() public {
@@ -570,7 +569,7 @@ contract USDLTest is Test {
 
         vm.prank(bridge);
         vm.expectRevert();
-        usdlProxy.mint(1000e6, user1);
+        usdlProxy.mint(user1, 1000e6);
     }
 
     function test_BridgeMintRequiresRole() public {
@@ -579,12 +578,12 @@ contract USDLTest is Test {
 
         vm.prank(bridge);
         vm.expectRevert();
-        usdlProxy.mint(1000e6, user1);
+        usdlProxy.mint(user1, 1000e6);
     }
 
     function test_BridgeBurn() public {
         vm.prank(bridge);
-        usdlProxy.mint(1000e6, user1);
+        usdlProxy.mint(user1, 1000e6);
 
         vm.prank(bridge);
         usdlProxy.burn(user1, 500e6);
@@ -923,7 +922,7 @@ contract USDLTest is Test {
         usdlProxy.grantBridgeRole(bridge);
 
         vm.prank(bridge);
-        usdlProxy.mint(1000e6, user2);
+        usdlProxy.mint(user2, 1000e6);
 
         // Share price should DECREASE (more shares, same assets)
         // This is correct behavior - bridge mints dilute share price
@@ -997,7 +996,7 @@ contract USDLTest is Test {
 
         // Simulate bridging in (mint on destination chain, but we're simulating it here)
         vm.prank(bridge);
-        usdlProxy.mint(300e6, user2);
+        usdlProxy.mint(user2, 300e6);
 
         // After complete cycle: supply should be back to initial
         assertEq(usdlProxy.totalSupply(), initialSupply, "Supply should be restored after mint/burn cycle");
@@ -1024,9 +1023,9 @@ contract USDLTest is Test {
 
         // Multiple bridge mints (simulating incoming cross-chain transfers)
         vm.startPrank(bridge);
-        usdlProxy.mint(500e6, user2);
-        usdlProxy.mint(300e6, user2);
-        usdlProxy.mint(200e6, user2);
+        usdlProxy.mint(user2, 500e6);
+        usdlProxy.mint(user2, 300e6);
+        usdlProxy.mint(user2, 200e6);
         vm.stopPrank();
 
         // Total assets should NOT change
@@ -1057,7 +1056,7 @@ contract USDLTest is Test {
         usdlProxy.grantBridgeRole(bridge);
 
         vm.prank(bridge);
-        usdlProxy.mint(1000e6, user2);
+        usdlProxy.mint(user2, 1000e6);
 
         // Now user1 tries to redeem all their shares
         // They should get proportional share of totalDepositedAssets
@@ -1095,7 +1094,7 @@ contract USDLTest is Test {
         vm.prank(owner);
         usdlProxy.grantBridgeRole(bridge);
         vm.prank(bridge);
-        usdlProxy.mint(10000e6, user2);
+        usdlProxy.mint(user2, 10000e6);
         assertEq(usdlProxy.totalAssets(), afterDeposit, "Bridge mint should not affect totalAssets");
 
         // Yield accrual

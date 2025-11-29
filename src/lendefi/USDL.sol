@@ -36,7 +36,6 @@ import {IGetCCIPAdmin} from "../interfaces/IGetCCIPAdmin.sol";
 import {
     AssetType,
     IERC4626 as IExternalERC4626,
-    IAaveV3Pool,
     IOUSGInstantManager,
     IRWAOracle
 } from "../interfaces/IYieldProtocols.sol";
@@ -71,13 +70,8 @@ contract USDL is
 
     // ============ Constants ============
 
-    /// @notice Basis points denominator (100%)
     uint256 public constant BASIS_POINTS = 10_000;
-
-    /// @notice Minimum deposit amount (1 USDC)
     uint256 public constant MIN_DEPOSIT = 1e6;
-
-    /// @notice Maximum deposit fee in basis points (5%)
     uint256 public constant MAX_FEE_BPS = 500;
 
     /// @notice Minimum interval allowed for automated yield accrual (1 hour)
@@ -329,11 +323,6 @@ contract USDL is
         if (receiver == address(0)) revert ZeroAddress();
         if (receiver == address(this)) revert InvalidRecipient(receiver);
 
-        if (hasRole(BRIDGE_ROLE, msg.sender)) {
-            _bridgeMint(receiver, shares);
-            return 0;
-        }
-
         // Calculate assets needed using internal accounting
         uint256 netAssets = _convertToAssetsInternal(shares, Math.Rounding.Ceil);
         uint256 fee = (netAssets * depositFeeBps) / (BASIS_POINTS - depositFeeBps);
@@ -452,6 +441,25 @@ contract USDL is
     // ============ CCIP Bridge Functions ============
 
     /**
+     * @notice Mint shares for CCIP bridge (burn-and-mint pattern)
+     * @dev Conforms to Chainlink IBurnMintERC20 signature: mint(address,uint256)
+     * @param account Address receiving the newly minted shares on this chain
+     * @param amount Amount of shares to mint
+     */
+    function mint(address account, uint256 amount)
+        external
+        whenNotPaused
+        onlyRole(BRIDGE_ROLE)
+        notBlacklisted(account)
+    {
+        if (account == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+        if (account == address(this)) revert InvalidRecipient(account);
+
+        _mint(account, amount);
+    }
+
+    /**
      * @notice Burn shares for CCIP bridge (burn-and-mint pattern)
      * @param account Address to burn from
      * @param amount Amount of shares to burn
@@ -462,14 +470,6 @@ contract USDL is
         if (amount == 0) revert ZeroAmount();
 
         _burn(account, amount);
-    }
-
-    function _bridgeMint(address account, uint256 amount) internal {
-        if (account == address(0)) revert ZeroAddress();
-        if (amount == 0) revert ZeroAmount();
-        if (account == address(this)) revert InvalidRecipient(account);
-
-        _mint(account, amount);
     }
 
     // ============ Yield Asset Management ============
@@ -1045,14 +1045,10 @@ contract USDL is
      * @custom:security Uses safeIncreaseAllowance to prevent approval race conditions
      */
     function _depositToYieldAsset(YieldAsset storage yieldAsset, uint256 amount) internal {
-        IERC20(yieldAsset.depositToken).safeIncreaseAllowance(yieldAsset.manager, amount);
-
-        if (yieldAsset.assetType == AssetType.ERC4626) {
-            IExternalERC4626(yieldAsset.manager).deposit(amount, address(this));
-        } else if (yieldAsset.assetType == AssetType.AAVE_V3) {
-            IAaveV3Pool(yieldAsset.manager).supply(yieldAsset.depositToken, amount, address(this), 0);
-        } else if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
+        if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
             IOUSGInstantManager(yieldAsset.manager).mint(amount);
+        } else {
+            _depositIntoERC4626Vault(yieldAsset, amount);
         }
     }
 
@@ -1161,18 +1157,38 @@ contract USDL is
 
         if (balance == 0) return;
 
-        if (yieldAsset.assetType == AssetType.ERC4626) {
-            uint256 sharesToRedeem = IExternalERC4626(yieldAsset.manager).convertToShares(amount);
-            if (sharesToRedeem > balance) sharesToRedeem = balance;
-            IExternalERC4626(yieldAsset.manager).redeem(sharesToRedeem, address(this), address(this));
-        } else if (yieldAsset.assetType == AssetType.AAVE_V3) {
-            uint256 withdrawAmount = amount > balance ? balance : amount;
-            yieldToken.safeIncreaseAllowance(yieldAsset.manager, withdrawAmount);
-            IAaveV3Pool(yieldAsset.manager).withdraw(yieldAsset.depositToken, withdrawAmount, address(this));
-        } else if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
+        if (yieldAsset.assetType == AssetType.ONDO_OUSG) {
             yieldToken.safeIncreaseAllowance(yieldAsset.manager, balance);
             IOUSGInstantManager(yieldAsset.manager).redeem(balance);
+        } else {
+            _withdrawFromERC4626Vault(yieldAsset, amount, balance);
         }
+    }
+
+    function _depositIntoERC4626Vault(YieldAsset storage yieldAsset, uint256 amount) internal {
+        IERC20(yieldAsset.depositToken).safeIncreaseAllowance(yieldAsset.manager, amount);
+        IExternalERC4626(yieldAsset.manager).deposit(amount, address(this));
+    }
+
+    function _withdrawFromERC4626Vault(
+        YieldAsset storage yieldAsset,
+        uint256 requestedAssets,
+        uint256 shareBalance
+    ) internal {
+        if (shareBalance == 0 || requestedAssets == 0) {
+            return;
+        }
+
+        IExternalERC4626 vault = IExternalERC4626(yieldAsset.manager);
+        uint256 sharesToRedeem = vault.convertToShares(requestedAssets);
+        if (sharesToRedeem == 0) {
+            sharesToRedeem = shareBalance;
+        }
+        if (sharesToRedeem > shareBalance) {
+            sharesToRedeem = shareBalance;
+        }
+
+        vault.redeem(sharesToRedeem, address(this), address(this));
     }
 
     /**
