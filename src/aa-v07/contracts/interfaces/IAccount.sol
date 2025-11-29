@@ -31,9 +31,7 @@ interface IAccount {
      *                                                    return SIG_VALIDATION_FAILED value (1) for signature failure.
      *                              Note that the validation code cannot use block.timestamp (or block.number) directly.
      */
-    function validateUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 missingAccountFunds
-    ) external returns (uint256 validationData);
+    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
+        external
+        returns (uint256 validationData);
 }

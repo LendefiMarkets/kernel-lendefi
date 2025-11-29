@@ -17,7 +17,7 @@ import "./BLSAccount.sol";
 contract BLSAccountFactory {
     BLSAccount public immutable accountImplementation;
 
-    constructor(IEntryPoint entryPoint, address aggregator){
+    constructor(IEntryPoint entryPoint, address aggregator) {
         accountImplementation = new BLSAccount(entryPoint, aggregator);
     }
 
@@ -29,10 +29,11 @@ contract BLSAccountFactory {
      * Also note that our BLSSignatureAggregator requires that the public key is the last parameter
      */
     function createAccount(uint256 salt, uint256[4] calldata aPublicKey) public returns (BLSAccount) {
-
         // the BLSSignatureAggregator depends on the public-key being the last 4 uint256 of msg.data.
         uint256 slot;
-        assembly {slot := aPublicKey}
+        assembly {
+            slot := aPublicKey
+        }
         require(slot == msg.data.length - 128, "wrong pubkey offset");
 
         address addr = getAddress(salt, aPublicKey);
@@ -40,22 +41,27 @@ contract BLSAccountFactory {
         if (codeSize > 0) {
             return BLSAccount(payable(addr));
         }
-        return BLSAccount(payable(new ERC1967Proxy{salt : bytes32(salt)}(
-                address(accountImplementation),
-                abi.encodeCall(BLSAccount.initialize, aPublicKey)
-            )));
+        return BLSAccount(
+            payable(
+                new ERC1967Proxy{salt: bytes32(salt)}(
+                    address(accountImplementation), abi.encodeCall(BLSAccount.initialize, aPublicKey)
+                )
+            )
+        );
     }
 
     /**
      * calculate the counterfactual address of this account as it would be returned by createAccount()
      */
     function getAddress(uint256 salt, uint256[4] memory aPublicKey) public view returns (address) {
-        return Create2.computeAddress(bytes32(salt), keccak256(abi.encodePacked(
-                type(ERC1967Proxy).creationCode,
-                abi.encode(
-                    address(accountImplementation),
-                    abi.encodeCall(BLSAccount.initialize, (aPublicKey))
+        return Create2.computeAddress(
+            bytes32(salt),
+            keccak256(
+                abi.encodePacked(
+                    type(ERC1967Proxy).creationCode,
+                    abi.encode(address(accountImplementation), abi.encodeCall(BLSAccount.initialize, (aPublicKey)))
                 )
-            )));
+            )
+        );
     }
 }

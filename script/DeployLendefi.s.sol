@@ -14,11 +14,11 @@ import "../src/aa-v07/contracts/interfaces/IEntryPoint.sol";
 /**
  * @title DeployKernel
  * @notice Deploy Kernel implementation and factory
- * 
+ *
  * Usage:
  *   npm run deploy:kernel
  *   forge script script/DeployLendefi.s.sol:DeployKernel --rpc-url $RPC_URL --broadcast --verify
- * 
+ *
  * Required .env:
  *   PRIVATE_KEY
  */
@@ -28,10 +28,8 @@ contract DeployKernel is Script {
 
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        
-        address entryPoint = vm.envOr("USE_ENTRYPOINT_V08", false) 
-            ? ENTRYPOINT_V08 
-            : ENTRYPOINT_V07;
+
+        address entryPoint = vm.envOr("USE_ENTRYPOINT_V08", false) ? ENTRYPOINT_V08 : ENTRYPOINT_V07;
 
         console.log("=== Kernel Deployment ===");
         console.log("EntryPoint:", entryPoint);
@@ -59,11 +57,11 @@ contract DeployKernel is Script {
  * @title DeployLendefiStaking
  * @notice Deploy LendefiStaking upgradeable contract with UUPS proxy
  * @dev Uses OpenZeppelin Foundry Upgrades for safe deployment
- * 
+ *
  * Usage:
  *   npm run deploy:staking
  *   forge script script/DeployLendefi.s.sol:DeployLendefiStaking --rpc-url $RPC_URL --broadcast --verify
- * 
+ *
  * Required .env:
  *   PRIVATE_KEY, LDFI_TOKEN, OWNER
  */
@@ -81,8 +79,7 @@ contract DeployLendefiStaking is Script {
 
         // Deploy using OpenZeppelin Upgrades - handles proxy + implementation
         address proxy = Upgrades.deployUUPSProxy(
-            "LendefiStaking.sol:LendefiStaking",
-            abi.encodeCall(LendefiStaking.initialize, (IERC20(ldfiToken), owner))
+            "LendefiStaking.sol:LendefiStaking", abi.encodeCall(LendefiStaking.initialize, (IERC20(ldfiToken), owner))
         );
 
         console.log("Proxy deployed:", proxy);
@@ -100,11 +97,11 @@ contract DeployLendefiStaking is Script {
  * @title DeployLendefiPaymaster
  * @notice Deploy LendefiStakingPaymaster upgradeable contract with UUPS proxy
  * @dev Uses OpenZeppelin Foundry Upgrades for safe deployment
- * 
+ *
  * Usage:
  *   npm run deploy:paymaster
  *   forge script script/DeployLendefi.s.sol:DeployLendefiPaymaster --rpc-url $RPC_URL --broadcast --verify
- * 
+ *
  * Required .env:
  *   PRIVATE_KEY, STAKING_ADDRESS, OWNER
  */
@@ -128,8 +125,7 @@ contract DeployLendefiPaymaster is Script {
         address proxy = Upgrades.deployUUPSProxy(
             "LendefiStakingPaymaster.sol:LendefiStakingPaymaster",
             abi.encodeCall(
-                LendefiStakingPaymaster.initialize,
-                (IEntryPoint(entryPoint), LendefiStaking(stakingAddress), owner)
+                LendefiStakingPaymaster.initialize, (IEntryPoint(entryPoint), LendefiStaking(stakingAddress), owner)
             )
         );
 
@@ -154,11 +150,11 @@ contract DeployLendefiPaymaster is Script {
  * @title DeployLendefiFull
  * @notice Deploy complete Lendefi system: Staking + Paymaster (both upgradeable)
  * @dev Uses OpenZeppelin Foundry Upgrades for safe deployment
- * 
+ *
  * Usage:
  *   npm run deploy:full
  *   forge script script/DeployLendefi.s.sol:DeployLendefiFull --rpc-url $RPC_URL --broadcast --verify
- * 
+ *
  * Required .env:
  *   PRIVATE_KEY, LDFI_TOKEN, OWNER
  */
@@ -181,8 +177,7 @@ contract DeployLendefiFull is Script {
 
         // 1. Deploy LendefiStaking with UUPS proxy
         address stakingProxy = Upgrades.deployUUPSProxy(
-            "LendefiStaking.sol:LendefiStaking",
-            abi.encodeCall(LendefiStaking.initialize, (IERC20(ldfiToken), owner))
+            "LendefiStaking.sol:LendefiStaking", abi.encodeCall(LendefiStaking.initialize, (IERC20(ldfiToken), owner))
         );
         LendefiStaking staking = LendefiStaking(stakingProxy);
         console.log("Staking proxy:", stakingProxy);
@@ -191,10 +186,7 @@ contract DeployLendefiFull is Script {
         // 2. Deploy LendefiStakingPaymaster with UUPS proxy
         address paymasterProxy = Upgrades.deployUUPSProxy(
             "LendefiStakingPaymaster.sol:LendefiStakingPaymaster",
-            abi.encodeCall(
-                LendefiStakingPaymaster.initialize,
-                (IEntryPoint(entryPoint), staking, owner)
-            )
+            abi.encodeCall(LendefiStakingPaymaster.initialize, (IEntryPoint(entryPoint), staking, owner))
         );
         LendefiStakingPaymaster paymaster = LendefiStakingPaymaster(payable(paymasterProxy));
         console.log("Paymaster proxy:", paymasterProxy);
@@ -221,11 +213,11 @@ contract DeployLendefiFull is Script {
  * @title DeployAll
  * @notice Deploy complete system: Kernel + Factory + Staking + Paymaster
  * @dev Kernel/Factory are not upgradeable, Staking/Paymaster use UUPS
- * 
+ *
  * Usage:
  *   npm run deploy:all
  *   forge script script/DeployLendefi.s.sol:DeployAll --rpc-url $RPC_URL --broadcast --verify
- * 
+ *
  * Required .env:
  *   PRIVATE_KEY, LDFI_TOKEN, OWNER
  */
@@ -237,10 +229,8 @@ contract DeployAll is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address ldfiToken = vm.envAddress("LDFI_TOKEN");
         address owner = vm.envAddress("OWNER");
-        
-        address entryPoint = vm.envOr("USE_ENTRYPOINT_V08", false) 
-            ? ENTRYPOINT_V08 
-            : ENTRYPOINT_V07;
+
+        address entryPoint = vm.envOr("USE_ENTRYPOINT_V08", false) ? ENTRYPOINT_V08 : ENTRYPOINT_V07;
 
         console.log("=== Full System Deployment ===");
         console.log("LDFI Token:", ldfiToken);
@@ -260,8 +250,7 @@ contract DeployAll is Script {
 
         // 3. Deploy LendefiStaking with UUPS proxy
         address stakingProxy = Upgrades.deployUUPSProxy(
-            "LendefiStaking.sol:LendefiStaking",
-            abi.encodeCall(LendefiStaking.initialize, (IERC20(ldfiToken), owner))
+            "LendefiStaking.sol:LendefiStaking", abi.encodeCall(LendefiStaking.initialize, (IERC20(ldfiToken), owner))
         );
         LendefiStaking staking = LendefiStaking(stakingProxy);
         console.log("LendefiStaking (proxy):", stakingProxy);
@@ -269,10 +258,7 @@ contract DeployAll is Script {
         // 4. Deploy LendefiStakingPaymaster with UUPS proxy
         address paymasterProxy = Upgrades.deployUUPSProxy(
             "LendefiStakingPaymaster.sol:LendefiStakingPaymaster",
-            abi.encodeCall(
-                LendefiStakingPaymaster.initialize,
-                (IEntryPoint(entryPoint), staking, owner)
-            )
+            abi.encodeCall(LendefiStakingPaymaster.initialize, (IEntryPoint(entryPoint), staking, owner))
         );
         console.log("LendefiStakingPaymaster (proxy):", paymasterProxy);
 
@@ -303,11 +289,11 @@ contract DeployAll is Script {
  * @title UpgradeLendefiStaking
  * @notice Upgrade LendefiStaking to new implementation
  * @dev Uses OpenZeppelin Foundry Upgrades for safe upgrade with validation
- * 
+ *
  * Usage:
  *   npm run upgrade:staking
  *   forge script script/DeployLendefi.s.sol:UpgradeLendefiStaking --rpc-url $RPC_URL --broadcast --verify
- * 
+ *
  * Required .env:
  *   PRIVATE_KEY, STAKING_ADDRESS
  */
@@ -340,11 +326,11 @@ contract UpgradeLendefiStaking is Script {
  * @title UpgradeLendefiPaymaster
  * @notice Upgrade LendefiStakingPaymaster to new implementation
  * @dev Uses OpenZeppelin Foundry Upgrades for safe upgrade with validation
- * 
+ *
  * Usage:
  *   npm run upgrade:paymaster
  *   forge script script/DeployLendefi.s.sol:UpgradeLendefiPaymaster --rpc-url $RPC_URL --broadcast --verify
- * 
+ *
  * Required .env:
  *   PRIVATE_KEY, PAYMASTER_ADDRESS
  */
@@ -376,14 +362,14 @@ contract UpgradeLendefiPaymaster is Script {
 /**
  * @title FundPaymaster
  * @notice Fund an existing paymaster with ETH deposit to EntryPoint
- * 
+ *
  * Usage:
  *   npm run fund:paymaster
  *   forge script script/DeployLendefi.s.sol:FundPaymaster --rpc-url $RPC_URL --broadcast
- * 
+ *
  * Required .env:
  *   PRIVATE_KEY, PAYMASTER_ADDRESS
- * 
+ *
  * Optional .env:
  *   DEPOSIT_AMOUNT (in wei, defaults to 1 ether)
  */
@@ -403,7 +389,7 @@ contract FundPaymaster is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         paymaster.deposit{value: depositAmount}();
-        
+
         console.log("Deposit complete");
         console.log("New deposit balance:", paymaster.getDeposit());
 

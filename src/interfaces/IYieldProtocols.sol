@@ -14,9 +14,10 @@ pragma solidity 0.8.23;
  * @dev Used to route deposit/redeem calls to correct interface
  */
 enum AssetType {
-    ERC4626,        // Standard tokenized vault (sDAI, Morpho vaults)
-    AAVE_V3,        // Aave V3 lending pool
-    ONDO_OUSG       // Ondo OUSG InstantManager (requires whitelist)
+    ERC4626, // Standard tokenized vault (sDAI, Morpho vaults)
+    AAVE_V3, // Aave V3 lending pool
+    ONDO_OUSG // Ondo OUSG InstantManager (requires whitelist)
+
 }
 
 // ============ ERC-4626 Interface ============
@@ -101,12 +102,7 @@ interface IAaveV3Pool {
      * @param onBehalfOf Address that will receive the aTokens
      * @param referralCode Code for referral program (use 0)
      */
-    function supply(
-        address asset,
-        uint256 amount,
-        address onBehalfOf,
-        uint16 referralCode
-    ) external;
+    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
 
     /**
      * @notice Withdraw assets from the pool
@@ -115,11 +111,7 @@ interface IAaveV3Pool {
      * @param to Address that will receive the underlying
      * @return The final amount withdrawn
      */
-    function withdraw(
-        address asset,
-        uint256 amount,
-        address to
-    ) external returns (uint256);
+    function withdraw(address asset, uint256 amount, address to) external returns (uint256);
 
     /**
      * @notice Get the aToken address for an asset
@@ -162,13 +154,10 @@ interface IRWAOracle {
      * @return updatedAt Timestamp when round was updated
      * @return answeredInRound The round ID in which the answer was computed
      */
-    function latestRoundData() external view returns (
-        uint80 roundId,
-        int256 answer,
-        uint256 startedAt,
-        uint256 updatedAt,
-        uint80 answeredInRound
-    );
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
 
     /**
      * @notice Get the price decimals

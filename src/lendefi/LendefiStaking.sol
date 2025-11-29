@@ -14,19 +14,19 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  * @notice DeFi staking contract for Lendefi token (LDF)
  * @dev Users stake LDF tokens to earn gas sponsorship tiers
  *      Upgradeable via UUPS proxy pattern
- * 
+ *
  * Tier Structure:
  * - NONE:     0 tokens staked         → 0% gas subsidy
  * - BASIC:    >= 1,000 LDF staked   → 50% gas subsidy
  * - PREMIUM:  >= 10,000 LDF staked  → 90% gas subsidy
  * - ULTIMATE: >= 100,000 LDF staked → 100% gas subsidy
  */
-contract LendefiStaking is 
-    Initializable, 
-    UUPSUpgradeable, 
-    OwnableUpgradeable, 
+contract LendefiStaking is
+    Initializable,
+    UUPSUpgradeable,
+    OwnableUpgradeable,
     PausableUpgradeable,
-    ReentrancyGuardUpgradeable 
+    ReentrancyGuardUpgradeable
 {
     using SafeERC20 for IERC20;
 
@@ -42,11 +42,11 @@ contract LendefiStaking is
     // ============ Structs ============
 
     struct StakeInfo {
-        uint256 amount;           // Total staked amount
-        uint256 stakedAt;         // Timestamp of first stake
-        uint256 lastStakeTime;    // Timestamp of last stake action
+        uint256 amount; // Total staked amount
+        uint256 stakedAt; // Timestamp of first stake
+        uint256 lastStakeTime; // Timestamp of last stake action
         uint256 gasUsedThisMonth; // Gas used in current month
-        uint256 lastResetMonth;   // Last month number when reset occurred
+        uint256 lastResetMonth; // Last month number when reset occurred
     }
 
     // ============ Constants ============
@@ -55,8 +55,6 @@ contract LendefiStaking is
     uint256 private constant SUBSIDY_PREMIUM = 90;
     uint256 private constant SUBSIDY_ULTIMATE = 100;
     uint256 private constant MONTH = 30 days;
-
-
 
     // ============ State Variables ============
 
@@ -162,7 +160,7 @@ contract LendefiStaking is
         if (amount == 0) revert ZeroAmount();
 
         StakeInfo storage info = stakes[msg.sender];
-        
+
         // Transfer tokens from user
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -185,10 +183,10 @@ contract LendefiStaking is
      */
     function unstake(uint256 amount) external nonReentrant whenNotPaused {
         if (amount == 0) revert ZeroAmount();
-        
+
         StakeInfo storage info = stakes[msg.sender];
         if (info.amount < amount) revert InsufficientStake();
-        
+
         // Check minimum stake period
         if (block.timestamp < info.lastStakeTime + minStakePeriod) {
             revert StakePeriodNotMet();
@@ -213,12 +211,12 @@ contract LendefiStaking is
     function recordGasUsage(address user, uint256 gasUsed) external whenNotPaused {
         if (!authorizedPaymasters[msg.sender]) revert NotAuthorizedPaymaster();
         if (user == address(0)) revert ZeroAddress();
-        
+
         StakeInfo storage info = stakes[user];
-        
+
         // Reset monthly usage if needed
         _resetMonthlyUsageIfNeeded(user);
-        
+
         info.gasUsedThisMonth += gasUsed;
         emit GasUsageRecorded(user, gasUsed, info.gasUsedThisMonth);
     }
@@ -232,7 +230,7 @@ contract LendefiStaking is
      */
     function getTier(address user) public view returns (Tier) {
         uint256 staked = stakes[user].amount;
-        
+
         if (staked >= ultimateThreshold) return Tier.ULTIMATE;
         if (staked >= premiumThreshold) return Tier.PREMIUM;
         if (staked >= basicThreshold) return Tier.BASIC;
@@ -270,26 +268,27 @@ contract LendefiStaking is
      * @return hasAllowance True if user has enough gas remaining
      * @return remainingGas Remaining gas this month
      */
-    function checkGasAllowance(
-        address user, 
-        uint256 gasNeeded
-    ) external view returns (bool hasAllowance, uint256 remainingGas) {
+    function checkGasAllowance(address user, uint256 gasNeeded)
+        external
+        view
+        returns (bool hasAllowance, uint256 remainingGas)
+    {
         StakeInfo storage info = stakes[user];
         Tier tier = getTier(user);
-        
+
         if (tier == Tier.NONE) {
             return (false, 0);
         }
 
         uint256 monthlyLimit = getMonthlyGasLimit(tier);
         uint256 used = info.gasUsedThisMonth;
-        
+
         // Check if monthly reset is due using deterministic boundaries
         uint256 currentMonth = _getCurrentMonth();
         if (currentMonth > info.lastResetMonth) {
             used = 0;
         }
-        
+
         remainingGas = monthlyLimit > used ? monthlyLimit - used : 0;
         hasAllowance = remainingGas >= gasNeeded;
     }
@@ -304,17 +303,21 @@ contract LendefiStaking is
      * @return gasLimit Monthly gas limit
      * @return canUnstakeAt Timestamp when unstaking is allowed
      */
-    function getUserInfo(address user) external view returns (
-        uint256 staked,
-        Tier tier,
-        uint256 subsidyPercent,
-        uint256 gasUsed,
-        uint256 gasLimit,
-        uint256 canUnstakeAt
-    ) {
+    function getUserInfo(address user)
+        external
+        view
+        returns (
+            uint256 staked,
+            Tier tier,
+            uint256 subsidyPercent,
+            uint256 gasUsed,
+            uint256 gasLimit,
+            uint256 canUnstakeAt
+        )
+    {
         StakeInfo storage info = stakes[user];
         tier = getTier(user);
-        
+
         staked = info.amount;
         subsidyPercent = getSubsidyPercentage(tier);
         gasUsed = info.gasUsedThisMonth;
@@ -330,7 +333,7 @@ contract LendefiStaking is
      */
     function getTokensToNextTier(address user) external view returns (uint256 tokensNeeded, Tier nextTier) {
         uint256 staked = stakes[user].amount;
-        
+
         if (staked >= ultimateThreshold) {
             return (0, Tier.ULTIMATE);
         }
@@ -375,16 +378,16 @@ contract LendefiStaking is
     /**
      * @notice Update tier thresholds
      * @param basic Basic tier threshold
-     * @param premium Premium tier threshold  
+     * @param premium Premium tier threshold
      * @param ultimate Ultimate tier threshold
      */
     function setTierThresholds(uint256 basic, uint256 premium, uint256 ultimate) external onlyOwner {
         if (basic >= premium || premium >= ultimate) revert InvalidThresholds();
-        
+
         basicThreshold = basic;
         premiumThreshold = premium;
         ultimateThreshold = ultimate;
-        
+
         emit TierThresholdsUpdated(basic, premium, ultimate);
     }
 
@@ -397,11 +400,11 @@ contract LendefiStaking is
     function setGasLimits(uint256 basic, uint256 premium, uint256 ultimate) external onlyOwner {
         if (basic == 0 || premium == 0 || ultimate == 0) revert InvalidGasLimits();
         if (basic > premium || premium > ultimate) revert InvalidGasLimits();
-        
+
         gasLimitBasic = basic;
         gasLimitPremium = premium;
         gasLimitUltimate = ultimate;
-        
+
         emit GasLimitsUpdated(basic, premium, ultimate);
     }
 
@@ -462,9 +465,9 @@ contract LendefiStaking is
      */
     function _resetMonthlyUsageIfNeeded(address user) internal {
         StakeInfo storage info = stakes[user];
-        
+
         uint256 currentMonth = _getCurrentMonth();
-        
+
         // Only reset if we've moved to a new month
         if (currentMonth > info.lastResetMonth) {
             info.gasUsedThisMonth = 0;

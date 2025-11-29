@@ -8,10 +8,11 @@ pragma solidity ^0.8.0;
  *      Upgradeable via UUPS proxy pattern
  * @custom:security-contact security@lendefimarkets.com
  */
-
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import {ERC20BurnableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
-import {ERC20PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
+import {ERC20BurnableUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
+import {ERC20PausableUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -128,12 +129,7 @@ contract LDF is
      * @param amount Amount to mint
      * @dev Only callable by addresses with MINTER_ROLE (CCIP Token Pool)
      */
-    function mint(address account, uint256 amount)
-        external
-        override
-        whenNotPaused
-        onlyRole(MINTER_ROLE)
-    {
+    function mint(address account, uint256 amount) external override whenNotPaused onlyRole(MINTER_ROLE) {
         if (account == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
         if (account == address(this)) revert InvalidRecipient(account);
@@ -159,10 +155,7 @@ contract LDF is
     }
 
     /// @inheritdoc ERC20BurnableUpgradeable
-    function burnFrom(address account, uint256 amount) 
-        public 
-        override(IBurnMintERC20, ERC20BurnableUpgradeable) 
-    {
+    function burnFrom(address account, uint256 amount) public override(IBurnMintERC20, ERC20BurnableUpgradeable) {
         super.burnFrom(account, amount);
     }
 
@@ -222,12 +215,9 @@ contract LDF is
         override(AccessControlUpgradeable, IERC165)
         returns (bool)
     {
-        return 
-            interfaceId == type(IERC20).interfaceId ||
-            interfaceId == type(IBurnMintERC20).interfaceId ||
-            interfaceId == type(IERC165).interfaceId ||
-            interfaceId == type(IAccessControl).interfaceId ||
-            interfaceId == type(IGetCCIPAdmin).interfaceId;
+        return interfaceId == type(IERC20).interfaceId || interfaceId == type(IBurnMintERC20).interfaceId
+            || interfaceId == type(IERC165).interfaceId || interfaceId == type(IAccessControl).interfaceId
+            || interfaceId == type(IGetCCIPAdmin).interfaceId;
     }
 
     // ============ Internal Functions ============

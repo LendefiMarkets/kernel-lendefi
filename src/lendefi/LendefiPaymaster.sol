@@ -75,11 +75,7 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
      * @param _signer Initial sponsorship signer (app backend)
      * @param _maxGasPerOp Maximum gas to sponsor per operation
      */
-    constructor(
-        IEntryPoint _entryPoint,
-        address _signer,
-        uint256 _maxGasPerOp
-    ) BasePaymaster(_entryPoint) {
+    constructor(IEntryPoint _entryPoint, address _signer, uint256 _maxGasPerOp) BasePaymaster(_entryPoint) {
         if (_signer == address(0)) revert ZeroAddress();
         if (_maxGasPerOp == 0) revert ZeroAmount();
 
@@ -110,11 +106,11 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
      * @return context Context to pass to postOp
      * @return validationData Packed validation data (sigFailed, validUntil, validAfter)
      */
-    function _validatePaymasterUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 maxCost
-    ) internal override returns (bytes memory context, uint256 validationData) {
+    function _validatePaymasterUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 maxCost)
+        internal
+        override
+        returns (bytes memory context, uint256 validationData)
+    {
         // Check sponsor balance
         if (sponsorBalance < maxCost) {
             revert InsufficientBalance(maxCost, sponsorBalance);
@@ -122,7 +118,7 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
 
         // Validate and decode paymaster data
         (bool valid, uint256 deadline) = _validatePaymasterData(userOp, userOpHash);
-        
+
         if (!valid) {
             return ("", _packValidationData(true, 0, 0));
         }
@@ -147,12 +143,7 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
      * @param context Context from validatePaymasterUserOp
      * @param actualGasCost Actual gas cost
      */
-    function _postOp(
-        PostOpMode,
-        bytes calldata context,
-        uint256 actualGasCost,
-        uint256
-    ) internal override {
+    function _postOp(PostOpMode, bytes calldata context, uint256 actualGasCost, uint256) internal override {
         (address sender, uint256 maxCost) = abi.decode(context, (address, uint256));
 
         // Refund unused gas reservation
@@ -195,11 +186,11 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
      */
     function depositSponsorship() external payable nonReentrant {
         if (msg.value == 0) revert ZeroAmount();
-        
+
         // Deposit to EntryPoint
         entryPoint.depositTo{value: msg.value}(address(this));
         sponsorBalance += msg.value;
-        
+
         emit Deposited(msg.sender, msg.value);
     }
 
@@ -215,7 +206,7 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
 
         sponsorBalance -= amount;
         entryPoint.withdrawTo(payable(to), amount);
-        
+
         emit Withdrawn(to, amount);
     }
 
@@ -240,12 +231,11 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
      * @param userOpHash Hash of the user operation
      * @return Attestation hash to sign
      */
-    function getAttestationHash(
-        address sender,
-        uint256 nonce,
-        uint256 deadline,
-        bytes32 userOpHash
-    ) external view returns (bytes32) {
+    function getAttestationHash(address sender, uint256 nonce, uint256 deadline, bytes32 userOpHash)
+        external
+        view
+        returns (bytes32)
+    {
         return _getHash(sender, nonce, deadline, userOpHash);
     }
 
@@ -256,13 +246,13 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
     /**
      * @dev Internal validation of paymaster data and signature
      */
-    function _validatePaymasterData(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash
-    ) internal returns (bool valid, uint256 deadline) {
+    function _validatePaymasterData(PackedUserOperation calldata userOp, bytes32 userOpHash)
+        internal
+        returns (bool valid, uint256 deadline)
+    {
         // Decode paymasterAndData: [paymaster(20)] [deadline(32)] [nonce(32)] [signature(65)]
         bytes calldata paymasterData = userOp.paymasterAndData[20:];
-        
+
         if (paymasterData.length < 129) {
             return (false, 0);
         }
@@ -284,7 +274,7 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
         // Verify signature
         bytes32 hash = _getHash(sender, nonce, deadline, userOpHash);
         bytes memory signature = paymasterData[64:129];
-        
+
         address recovered = hash.recover(signature);
         if (recovered != sponsorshipSigner) {
             return (false, deadline);
@@ -292,37 +282,30 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
 
         // Increment nonce
         nonces[sender]++;
-        
+
         return (true, deadline);
     }
 
     /**
      * @dev Generate hash for signature verification
      */
-    function _getHash(
-        address sender,
-        uint256 nonce,
-        uint256 deadline,
-        bytes32 userOpHash
-    ) internal view returns (bytes32) {
-        return keccak256(abi.encodePacked(
-            sender,
-            block.chainid,
-            address(this),
-            nonce,
-            deadline,
-            userOpHash
-        )).toEthSignedMessageHash();
+    function _getHash(address sender, uint256 nonce, uint256 deadline, bytes32 userOpHash)
+        internal
+        view
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(sender, block.chainid, address(this), nonce, deadline, userOpHash))
+            .toEthSignedMessageHash();
     }
 
     /**
      * @dev Pack validation data for ERC-4337
      */
-    function _packValidationData(
-        bool sigFailed,
-        uint48 validUntil,
-        uint48 validAfter
-    ) internal pure returns (uint256) {
+    function _packValidationData(bool sigFailed, uint48 validUntil, uint48 validAfter)
+        internal
+        pure
+        returns (uint256)
+    {
         return (sigFailed ? 1 : 0) | (uint256(validUntil) << 160) | (uint256(validAfter) << 208);
     }
 

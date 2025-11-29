@@ -15,12 +15,12 @@ import "./LendefiStaking.sol";
  * @notice ERC-4337 v0.7 Paymaster that sponsors gas based on LDF token staking
  * @dev Upgradeable version implementing BasePaymaster patterns from aa-v07
  *      Users stake LDF tokens in LendefiStaking contract to earn gas subsidies
- * 
+ *
  * Architecture:
  * - Cannot inherit from BasePaymaster due to immutable entryPoint (breaks UUPS)
  * - Implements all BasePaymaster functions with identical signatures
  * - Uses same _requireFromEntryPoint pattern for security
- * 
+ *
  * Flow:
  * 1. User stakes LDF tokens in LendefiStaking contract
  * 2. Staking determines user's tier (BASIC/PREMIUM/ULTIMATE)
@@ -28,17 +28,17 @@ import "./LendefiStaking.sol";
  * 4. Paymaster sponsors gas based on tier's subsidy percentage
  * 5. Gas usage is recorded back to staking contract
  */
-contract LendefiStakingPaymaster is 
+contract LendefiStakingPaymaster is
     Initializable,
     UUPSUpgradeable,
     OwnableUpgradeable,
     ReentrancyGuardUpgradeable,
-    IPaymaster 
+    IPaymaster
 {
     // ═══════════════════════════════════════════════════════════════════════════
     // ERRORS
     // ═══════════════════════════════════════════════════════════════════════════
-    
+
     error NotFromEntryPoint();
     error InvalidWallet();
     error NoStake();
@@ -74,12 +74,7 @@ contract LendefiStakingPaymaster is
     // EVENTS
     // ═══════════════════════════════════════════════════════════════════════════
 
-    event GasSponsored(
-        address indexed user,
-        uint256 gasUsed,
-        uint256 subsidyAmount,
-        LendefiStaking.Tier tier
-    );
+    event GasSponsored(address indexed user, uint256 gasUsed, uint256 subsidyAmount, LendefiStaking.Tier tier);
     event MaxGasPerOperationUpdated(uint256 oldLimit, uint256 newLimit);
     event MinDepositUpdated(uint256 oldMin, uint256 newMin);
     event Deposited(address indexed sender, uint256 amount);
@@ -105,11 +100,10 @@ contract LendefiStakingPaymaster is
      * @param _stakingContract LendefiStaking contract address
      * @param _owner Owner address
      */
-    function initialize(
-        IEntryPoint _entryPoint,
-        LendefiStaking _stakingContract,
-        address _owner
-    ) external initializer {
+    function initialize(IEntryPoint _entryPoint, LendefiStaking _stakingContract, address _owner)
+        external
+        initializer
+    {
         if (address(_entryPoint) == address(0)) revert ZeroAddress();
         if (address(_stakingContract) == address(0)) revert ZeroAddress();
         if (_owner == address(0)) revert ZeroAddress();
@@ -117,10 +111,10 @@ contract LendefiStakingPaymaster is
         __Ownable_init(_owner);
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
-        
+
         entryPoint = _entryPoint;
         stakingContract = _stakingContract;
-        
+
         // Set defaults
         maxGasPerOperation = 500_000;
         minPaymasterDeposit = 0.1 ether;
@@ -148,11 +142,11 @@ contract LendefiStakingPaymaster is
      * @return context Context for postOp
      * @return validationData Validation result
      */
-    function validatePaymasterUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 maxCost
-    ) external override returns (bytes memory context, uint256 validationData) {
+    function validatePaymasterUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 maxCost)
+        external
+        override
+        returns (bytes memory context, uint256 validationData)
+    {
         _requireFromEntryPoint();
         return _validatePaymasterUserOp(userOp, userOpHash, maxCost);
     }
@@ -165,12 +159,10 @@ contract LendefiStakingPaymaster is
      * @param actualGasCost Actual gas cost incurred
      * @param actualUserOpFeePerGas Actual fee per gas
      */
-    function postOp(
-        PostOpMode mode,
-        bytes calldata context,
-        uint256 actualGasCost,
-        uint256 actualUserOpFeePerGas
-    ) external override {
+    function postOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost, uint256 actualUserOpFeePerGas)
+        external
+        override
+    {
         _requireFromEntryPoint();
         _postOp(mode, context, actualGasCost, actualUserOpFeePerGas);
     }
@@ -194,10 +186,7 @@ contract LendefiStakingPaymaster is
      * @param withdrawAddress Target to send to
      * @param amount Amount to withdraw
      */
-    function withdrawTo(
-        address payable withdrawAddress,
-        uint256 amount
-    ) public onlyOwner {
+    function withdrawTo(address payable withdrawAddress, uint256 amount) public onlyOwner {
         entryPoint.withdrawTo(withdrawAddress, amount);
         emit Withdrawn(withdrawAddress, amount);
     }
@@ -248,17 +237,18 @@ contract LendefiStakingPaymaster is
      * @return tier User's current tier
      * @return subsidyPercent Subsidy percentage
      */
-    function checkEligibility(
-        address user,
-        uint256 gasNeeded
-    ) external view returns (bool eligible, LendefiStaking.Tier tier, uint256 subsidyPercent) {
+    function checkEligibility(address user, uint256 gasNeeded)
+        external
+        view
+        returns (bool eligible, LendefiStaking.Tier tier, uint256 subsidyPercent)
+    {
         tier = stakingContract.getTier(user);
-        
+
         if (tier == LendefiStaking.Tier.NONE) {
             return (false, tier, 0);
         }
 
-        (bool hasAllowance, ) = stakingContract.checkGasAllowance(user, gasNeeded);
+        (bool hasAllowance,) = stakingContract.checkGasAllowance(user, gasNeeded);
         subsidyPercent = stakingContract.getSubsidyPercentage(tier);
         eligible = hasAllowance && gasNeeded <= maxGasPerOperation;
     }
@@ -315,11 +305,11 @@ contract LendefiStakingPaymaster is
     /**
      * @dev Internal validation logic
      */
-    function _validatePaymasterUserOp(
-        PackedUserOperation calldata userOp,
-        bytes32 /*userOpHash*/,
-        uint256 maxCost
-    ) internal view returns (bytes memory context, uint256 validationData) {
+    function _validatePaymasterUserOp(PackedUserOperation calldata userOp, bytes32, /*userOpHash*/ uint256 maxCost)
+        internal
+        view
+        returns (bytes memory context, uint256 validationData)
+    {
         address user = userOp.sender;
 
         // Check paymaster has enough deposit
@@ -341,7 +331,7 @@ contract LendefiStakingPaymaster is
         }
 
         // Check user has enough gas allowance remaining this month
-        (bool hasAllowance, ) = stakingContract.checkGasAllowance(user, estimatedGas);
+        (bool hasAllowance,) = stakingContract.checkGasAllowance(user, estimatedGas);
         if (!hasAllowance) {
             revert MonthlyLimitExceeded();
         }
@@ -360,24 +350,19 @@ contract LendefiStakingPaymaster is
     /**
      * @dev Internal post-operation logic
      */
-    function _postOp(
-        PostOpMode mode,
-        bytes calldata context,
-        uint256 actualGasCost,
-        uint256 actualUserOpFeePerGas
-    ) internal {
+    function _postOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost, uint256 actualUserOpFeePerGas)
+        internal
+    {
         if (mode == PostOpMode.opSucceeded || mode == PostOpMode.opReverted) {
             (
                 address user,
-                ,  // estimatedGas - no longer used
+                , // estimatedGas - no longer used
                 ,
                 LendefiStaking.Tier tier
             ) = abi.decode(context, (address, uint256, uint256, LendefiStaking.Tier));
 
             // Calculate actual gas used from actual cost
-            uint256 actualGasUsed = actualUserOpFeePerGas > 0 
-                ? actualGasCost / actualUserOpFeePerGas 
-                : 0;
+            uint256 actualGasUsed = actualUserOpFeePerGas > 0 ? actualGasCost / actualUserOpFeePerGas : 0;
 
             // Record actual gas usage in staking contract
             if (actualGasUsed > 0) {
@@ -400,7 +385,7 @@ contract LendefiStakingPaymaster is
         bytes32 gasLimits = userOp.accountGasLimits;
         uint256 verificationGasLimit = uint128(bytes16(gasLimits));
         uint256 callGasLimit = uint128(uint256(gasLimits));
-        
+
         return verificationGasLimit + callGasLimit + userOp.preVerificationGas;
     }
 

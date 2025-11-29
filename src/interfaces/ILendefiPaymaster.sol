@@ -45,12 +45,10 @@ interface ILendefiPaymaster {
      * @param userOpHash Hash of the user operation
      * @return Attestation hash to sign
      */
-    function getAttestationHash(
-        address sender,
-        uint256 nonce,
-        uint256 deadline,
-        bytes32 userOpHash
-    ) external view returns (bytes32);
+    function getAttestationHash(address sender, uint256 nonce, uint256 deadline, bytes32 userOpHash)
+        external
+        view
+        returns (bytes32);
 
     /**
      * @notice Get the sponsorship signer address

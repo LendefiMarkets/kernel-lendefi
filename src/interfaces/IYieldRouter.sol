@@ -12,28 +12,20 @@ interface IYieldRouter {
 
     /// @notice Supported yield asset configuration
     struct YieldAsset {
-        address token;           // Yield-bearing token address (sDAI, aUSDC, OUSG, etc.)
-        address depositToken;    // Token used to acquire yield asset (USDC, DAI)
-        address manager;         // Manager/pool contract for the yield asset
-        uint256 allocation;      // Basis points allocation (e.g., 5000 = 50%)
-        AssetType assetType;     // Protocol type for routing calls
-        bool active;             // Whether this asset is active
+        address token; // Yield-bearing token address (sDAI, aUSDC, OUSG, etc.)
+        address depositToken; // Token used to acquire yield asset (USDC, DAI)
+        address manager; // Manager/pool contract for the yield asset
+        uint256 allocation; // Basis points allocation (e.g., 5000 = 50%)
+        AssetType assetType; // Protocol type for routing calls
+        bool active; // Whether this asset is active
     }
 
     // ============ Events ============
 
-    event Deposit(
-        address indexed depositor,
-        address indexed depositToken,
-        uint256 depositAmount,
-        uint256 usdlMinted
-    );
+    event Deposit(address indexed depositor, address indexed depositToken, uint256 depositAmount, uint256 usdlMinted);
 
     event Withdraw(
-        address indexed withdrawer,
-        address indexed withdrawToken,
-        uint256 usdlBurned,
-        uint256 withdrawAmount
+        address indexed withdrawer, address indexed withdrawToken, uint256 usdlBurned, uint256 withdrawAmount
     );
 
     event YieldAssetAdded(address indexed token, address indexed manager, uint256 allocation);
@@ -54,11 +46,9 @@ interface IYieldRouter {
     function withdraw(uint256 usdlAmount, address recipient) external returns (uint256 withdrawAmount);
 
     /// @notice Process fiat onramp (authorized operator only)
-    function processFiatOnramp(
-        bytes32 referenceId,
-        address recipient,
-        uint256 usdcAmount
-    ) external returns (uint256 usdlAmount);
+    function processFiatOnramp(bytes32 referenceId, address recipient, uint256 usdcAmount)
+        external
+        returns (uint256 usdlAmount);
 
     /// @notice Get total value locked in yield assets (in USDC terms)
     function getTotalValueLocked() external view returns (uint256);

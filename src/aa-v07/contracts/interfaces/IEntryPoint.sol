@@ -1,7 +1,8 @@
 /**
- ** Account-Abstraction (EIP-4337) singleton EntryPoint implementation.
- ** Only one instance required on each chain.
- **/
+ * Account-Abstraction (EIP-4337) singleton EntryPoint implementation.
+ * Only one instance required on each chain.
+ *
+ */
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.7.5;
 
@@ -15,7 +16,8 @@ import "./IAggregator.sol";
 import "./INonceManager.sol";
 
 interface IEntryPoint is IStakeManager, INonceManager {
-    /***
+    /**
+     *
      * An event emitted after each successful request.
      * @param userOpHash    - Unique identifier for the request (hash its entire content, except signature).
      * @param sender        - The account that generates this request.
@@ -43,12 +45,7 @@ interface IEntryPoint is IStakeManager, INonceManager {
      * @param factory    - The factory used to deploy this account (in the initCode)
      * @param paymaster  - The paymaster used by this UserOp
      */
-    event AccountDeployed(
-        bytes32 indexed userOpHash,
-        address indexed sender,
-        address factory,
-        address paymaster
-    );
+    event AccountDeployed(bytes32 indexed userOpHash, address indexed sender, address factory, address paymaster);
 
     /**
      * An event emitted if the UserOperation "callData" reverted with non-zero length.
@@ -58,10 +55,7 @@ interface IEntryPoint is IStakeManager, INonceManager {
      * @param revertReason - The return bytes from the (reverted) call to "callData".
      */
     event UserOperationRevertReason(
-        bytes32 indexed userOpHash,
-        address indexed sender,
-        uint256 nonce,
-        bytes revertReason
+        bytes32 indexed userOpHash, address indexed sender, uint256 nonce, bytes revertReason
     );
 
     /**
@@ -71,12 +65,7 @@ interface IEntryPoint is IStakeManager, INonceManager {
      * @param nonce        - The nonce used in the request.
      * @param revertReason - The return bytes from the (reverted) call to "callData".
      */
-    event PostOpRevertReason(
-        bytes32 indexed userOpHash,
-        address indexed sender,
-        uint256 nonce,
-        bytes revertReason
-    );
+    event PostOpRevertReason(bytes32 indexed userOpHash, address indexed sender, uint256 nonce, bytes revertReason);
 
     /**
      * UserOp consumed more than prefund. The UserOperation is reverted, and no refund is made.
@@ -84,11 +73,7 @@ interface IEntryPoint is IStakeManager, INonceManager {
      * @param sender       - The sender of this request.
      * @param nonce        - The nonce used in the request.
      */
-    event UserOperationPrefundTooLow(
-        bytes32 indexed userOpHash,
-        address indexed sender,
-        uint256 nonce
-    );
+    event UserOperationPrefundTooLow(bytes32 indexed userOpHash, address indexed sender, uint256 nonce);
 
     /**
      * An event emitted by handleOps(), before starting the execution loop.
@@ -151,20 +136,15 @@ interface IEntryPoint is IStakeManager, INonceManager {
      * @param ops         - The operations to execute.
      * @param beneficiary - The address to receive the fees.
      */
-    function handleOps(
-        PackedUserOperation[] calldata ops,
-        address payable beneficiary
-    ) external;
+    function handleOps(PackedUserOperation[] calldata ops, address payable beneficiary) external;
 
     /**
      * Execute a batch of UserOperation with Aggregators
      * @param opsPerAggregator - The operations to execute, grouped by aggregator (or address(0) for no-aggregator accounts).
      * @param beneficiary      - The address to receive the fees.
      */
-    function handleAggregatedOps(
-        UserOpsPerAggregator[] calldata opsPerAggregator,
-        address payable beneficiary
-    ) external;
+    function handleAggregatedOps(UserOpsPerAggregator[] calldata opsPerAggregator, address payable beneficiary)
+        external;
 
     /**
      * Generate a request Id - unique identifier for this request.
@@ -172,9 +152,7 @@ interface IEntryPoint is IStakeManager, INonceManager {
      * @param userOp - The user operation to generate the request ID for.
      * @return hash the hash of this UserOperation
      */
-    function getUserOpHash(
-        PackedUserOperation calldata userOp
-    ) external view returns (bytes32);
+    function getUserOpHash(PackedUserOperation calldata userOp) external view returns (bytes32);
 
     /**
      * Gas and return values during simulation.

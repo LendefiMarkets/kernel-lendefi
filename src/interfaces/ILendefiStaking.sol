@@ -10,20 +10,21 @@ interface ILendefiStaking {
     // ============ Enums ============
 
     enum Tier {
-        NONE,      // 0 tokens - no subsidy
-        BASIC,     // >= 1,000 LDF - 50% subsidy
-        PREMIUM,   // >= 10,000 LDF - 90% subsidy
-        ULTIMATE   // >= 100,000 LDF - 100% subsidy
+        NONE, // 0 tokens - no subsidy
+        BASIC, // >= 1,000 LDF - 50% subsidy
+        PREMIUM, // >= 10,000 LDF - 90% subsidy
+        ULTIMATE // >= 100,000 LDF - 100% subsidy
+
     }
 
     // ============ Structs ============
 
     struct StakeInfo {
-        uint256 amount;           // Total staked amount
-        uint256 stakedAt;         // Timestamp of first stake
-        uint256 lastStakeTime;    // Timestamp of last stake action
+        uint256 amount; // Total staked amount
+        uint256 stakedAt; // Timestamp of first stake
+        uint256 lastStakeTime; // Timestamp of last stake action
         uint256 gasUsedThisMonth; // Gas used in current month
-        uint256 lastResetTime;    // Last monthly reset timestamp
+        uint256 lastResetTime; // Last monthly reset timestamp
     }
 
     // ============ Events ============
@@ -71,26 +72,26 @@ interface ILendefiStaking {
     function getMonthlyGasLimit(Tier tier) external view returns (uint256);
 
     /// @notice Check if user has enough gas allowance remaining
-    function checkGasAllowance(
-        address user,
-        uint256 gasNeeded
-    ) external view returns (bool hasAllowance, uint256 remainingGas);
+    function checkGasAllowance(address user, uint256 gasNeeded)
+        external
+        view
+        returns (bool hasAllowance, uint256 remainingGas);
 
     /// @notice Get complete stake info for a user
-    function getUserInfo(address user) external view returns (
-        uint256 staked,
-        Tier tier,
-        uint256 subsidyPercent,
-        uint256 gasUsed,
-        uint256 gasLimit,
-        uint256 canUnstakeAt
-    );
+    function getUserInfo(address user)
+        external
+        view
+        returns (
+            uint256 staked,
+            Tier tier,
+            uint256 subsidyPercent,
+            uint256 gasUsed,
+            uint256 gasLimit,
+            uint256 canUnstakeAt
+        );
 
     /// @notice Get tokens needed to reach next tier
-    function getTokensToNextTier(address user) external view returns (
-        uint256 tokensNeeded,
-        Tier nextTier
-    );
+    function getTokensToNextTier(address user) external view returns (uint256 tokensNeeded, Tier nextTier);
 
     // ============ Admin Functions ============
 
