@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {AssetType} from "./IYieldProtocols.sol";
+
 /**
  * @title IYieldRouter Interface
  * @notice Interface for the Lendefi Yield Router
@@ -10,10 +12,11 @@ interface IYieldRouter {
 
     /// @notice Supported yield asset configuration
     struct YieldAsset {
-        address token;           // Yield-bearing token address (OUSG, BUIDL, etc.)
-        address depositToken;    // Token used to acquire yield asset (USDC)
-        address manager;         // Manager/minter contract for the yield asset
+        address token;           // Yield-bearing token address (sDAI, aUSDC, OUSG, etc.)
+        address depositToken;    // Token used to acquire yield asset (USDC, DAI)
+        address manager;         // Manager/pool contract for the yield asset
         uint256 allocation;      // Basis points allocation (e.g., 5000 = 50%)
+        AssetType assetType;     // Protocol type for routing calls
         bool active;             // Whether this asset is active
     }
 
