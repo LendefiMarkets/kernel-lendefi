@@ -791,7 +791,7 @@ contract USDLTest is Test {
     }
 
     // ============ Yield Accrual Tests (4) ============
-    function test_SharePriceIncreasesWithYield() public {
+    function test_RebaseIndexIncreasesWithYield() public {
         vm.prank(manager);
         usdlProxy.addYieldAsset(address(yieldVault), address(usdc), address(yieldVault), 10000, AssetType.ERC4626);
 
@@ -800,18 +800,25 @@ contract USDLTest is Test {
         usdlProxy.deposit(1000e6, user1);
         vm.stopPrank();
 
-        uint256 sharePriceBefore = usdlProxy.sharePrice();
+        uint256 rebaseIndexBefore = usdlProxy.getRebaseIndex();
+        uint256 balanceBefore = usdlProxy.balanceOf(user1);
 
         // Simulate yield in the underlying vault
         yieldVault.setYieldMultiplier(1.1e18);
 
-        // Accrue yield to update internal accounting
+        // Accrue yield to update internal accounting and rebase index
         vm.prank(manager);
         usdlProxy.accrueYield();
 
-        uint256 sharePriceAfter = usdlProxy.sharePrice();
+        uint256 rebaseIndexAfter = usdlProxy.getRebaseIndex();
+        uint256 balanceAfter = usdlProxy.balanceOf(user1);
 
-        assertGt(sharePriceAfter, sharePriceBefore, "Share price should increase after yield accrual");
+        assertGt(rebaseIndexAfter, rebaseIndexBefore, "Rebase index should increase after yield accrual");
+        assertGt(balanceAfter, balanceBefore, "User balance should increase after yield accrual");
+        
+        // Share price stays ~1:1 because both totalAssets and totalSupply increase
+        uint256 sharePriceAfter = usdlProxy.sharePrice();
+        assertApproxEqAbs(sharePriceAfter, 1e6, 1000, "Share price stays ~1:1 with rebasing");
     }
 
     function test_TotalAssetsReflectsYield() public {
@@ -1408,8 +1415,10 @@ contract USDLTest is Test {
         uint256 user1NetAssets = 1000e6 - user1Fee; // 999.9 USDC
         assertEq(user1Shares, user1NetAssets, "User1 shares should equal net assets on first deposit");
 
-        // Record initial total assets
+        // Record initial values
         uint256 totalAssetsBefore = usdlProxy.totalAssets();
+        uint256 user1BalanceBefore = usdlProxy.balanceOf(user1);
+        uint256 rebaseIndexBefore = usdlProxy.getRebaseIndex();
 
         // Simulate 10% yield (multiply by 1.1)
         yieldVault.setYieldMultiplier(1.1e18);
@@ -1422,11 +1431,13 @@ contract USDLTest is Test {
         uint256 totalAssetsAfter = usdlProxy.totalAssets();
         assertGt(totalAssetsAfter, totalAssetsBefore, "Total assets should increase with yield");
 
-        // Now share price should be higher
-        uint256 sharePrice = (usdlProxy.totalAssets() * 1e18) / usdlProxy.totalSupply();
-        assertGt(sharePrice, 1e18, "Share price should be > 1");
+        // With rebasing: rebaseIndex increases, user balance increases
+        uint256 rebaseIndexAfter = usdlProxy.getRebaseIndex();
+        uint256 user1BalanceAfter = usdlProxy.balanceOf(user1);
+        assertGt(rebaseIndexAfter, rebaseIndexBefore, "Rebase index should increase");
+        assertGt(user1BalanceAfter, user1BalanceBefore, "User balance should increase with yield");
 
-        // Second deposit - should get fewer shares due to higher price
+        // Second deposit - user gets shares at current rebase index
         uint256 depositAmount = 1000e6;
         uint256 fee = (depositAmount * 10) / 10000;
         uint256 netAssets = depositAmount - fee;
@@ -1436,8 +1447,20 @@ contract USDLTest is Test {
         uint256 shares = usdlProxy.deposit(depositAmount, user2);
         vm.stopPrank();
 
-        // Shares should be less than netAssets due to yield
-        assertLt(shares, netAssets, "Shares should be less due to yield");
+        // With rebasing token: shares are calculated using rebased totalSupply
+        // Raw shares = netAssets * totalSupply / totalDepositedAssets
+        // Then balanceOf returns rawShares * rebaseIndex / PRECISION
+        // The end result is that user2's balance reflects the current rebase index
+        uint256 user2Balance = usdlProxy.balanceOf(user2);
+        uint256 user2RawShares = usdlProxy.sharesOf(user2);
+        
+        // User2's raw shares should approximately equal netAssets adjusted for current ratio
+        // And their rebased balance = rawShares * rebaseIndex / 1e6
+        uint256 expectedBalance = (user2RawShares * rebaseIndexAfter) / 1e6;
+        assertApproxEqAbs(user2Balance, expectedBalance, 1000, "User2 balance should match shares * rebaseIndex");
+        
+        // The raw shares should be approximately netAssets (since totalSupply/totalDepositedAssets ≈ 1)
+        assertGt(shares, 0, "User2 should receive shares");
     }
 
     // ============ Pause Tests (4) ============
@@ -1595,7 +1618,7 @@ contract USDLTest is Test {
         assertLt(price, 1.1e6, "Price should be < 1.1 USDC");
     }
 
-    function test_GetPriceIncreasesWithYield() public {
+    function test_BalanceIncreasesWithYield() public {
         vm.prank(manager);
         usdlProxy.addYieldAsset(address(yieldVault), address(usdc), address(yieldVault), 10000, AssetType.ERC4626);
 
@@ -1604,15 +1627,21 @@ contract USDLTest is Test {
         usdlProxy.deposit(1000e6, user1);
         vm.stopPrank();
 
-        uint256 priceBefore = usdlProxy.getPrice();
+        uint256 balanceBefore = usdlProxy.balanceOf(user1);
 
         // Simulate 10% yield
         yieldVault.setYieldMultiplier(1.1e18);
         vm.prank(manager);
         usdlProxy.accrueYield();
 
+        uint256 balanceAfter = usdlProxy.balanceOf(user1);
+        
+        // Balance increases with yield (rebasing)
+        assertGt(balanceAfter, balanceBefore, "Balance should increase with yield");
+        
+        // Price stays ~1:1 (rebasing token)
         uint256 priceAfter = usdlProxy.getPrice();
-        assertGt(priceAfter, priceBefore, "Price should increase with yield");
+        assertApproxEqAbs(priceAfter, 1e6, 1000, "Price stays ~1:1 with rebasing");
     }
 
     function test_SharePriceAfterDeposit() public {

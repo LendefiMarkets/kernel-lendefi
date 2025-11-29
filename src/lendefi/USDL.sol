@@ -76,6 +76,9 @@ contract USDL is
     uint256 public constant MIN_DEPOSIT = 1e6;
     uint256 public constant MAX_FEE_BPS = 500;
 
+    /// @notice Precision for rebase index (1e6 for 6 decimal token)
+    uint256 public constant REBASE_INDEX_PRECISION = 1e6;
+
     /// @notice Minimum interval allowed for automated yield accrual (1 hour)
     uint256 public constant MIN_AUTOMATION_INTERVAL = 1 hours;
 
@@ -120,8 +123,13 @@ contract USDL is
     /// @notice Timestamp of last yield accrual (manual or automated)
     uint256 public lastYieldAccrualTimestamp;
 
+    /// @notice Rebase index for yield distribution (starts at 1e6, increases with yield)
+    /// @dev balanceOf(user) = shares[user] * rebaseIndex / REBASE_INDEX_PRECISION
+    ///      This maintains 1:1 USDC peg while distributing yield to all holders
+    uint256 public rebaseIndex;
+
     /// @notice Storage gap for future upgrades
-    uint256[38] private __gap;
+    uint256[37] private __gap;
 
     // ============ Events ============
 
@@ -139,6 +147,7 @@ contract USDL is
     event YieldAccrued(uint256 yieldAmount, uint256 newTotalAssets);
     event DonatedTokensRescued(address indexed to, uint256 amount);
     event YieldAccrualIntervalUpdated(uint256 oldInterval, uint256 newInterval);
+    event RebaseIndexUpdated(uint256 oldIndex, uint256 newIndex);
 
     // ============ Errors ============
 
@@ -216,6 +225,9 @@ contract USDL is
         // Default automation settings: daily accruals
         yieldAccrualInterval = 1 days;
         lastYieldAccrualTimestamp = block.timestamp;
+
+        // Initialize rebase index at 1:1 (1e6 precision for 6 decimal token)
+        rebaseIndex = REBASE_INDEX_PRECISION;
     }
 
     // ============ ERC-4626 Overrides ============
@@ -227,6 +239,45 @@ contract USDL is
      */
     function totalAssets() public view override returns (uint256) {
         return totalDepositedAssets;
+    }
+
+    /**
+     * @notice Returns the rebased total supply (all balances sum to this)
+     * @dev totalSupply = rawTotalSupply * rebaseIndex / PRECISION
+     *      This represents total USDL in circulation at current rebase rate
+     */
+    function totalSupply() public view override(ERC20Upgradeable, IERC20) returns (uint256) {
+        return (super.totalSupply() * rebaseIndex) / REBASE_INDEX_PRECISION;
+    }
+
+    /**
+     * @notice Returns the rebased balance of an account
+     * @dev balance = rawShares * rebaseIndex / PRECISION
+     *      As yield accrues, rebaseIndex increases, so balances increase proportionally
+     * @param account The address to query
+     * @return The rebased token balance
+     */
+    function balanceOf(address account) public view override(ERC20Upgradeable, IERC20) returns (uint256) {
+        return (super.balanceOf(account) * rebaseIndex) / REBASE_INDEX_PRECISION;
+    }
+
+    /**
+     * @notice Returns the raw (non-rebased) share balance of an account
+     * @dev Useful for internal calculations and debugging
+     * @param account The address to query
+     * @return The raw share balance
+     */
+    function sharesOf(address account) public view returns (uint256) {
+        return super.balanceOf(account);
+    }
+
+    /**
+     * @notice Returns the total raw shares (non-rebased)
+     * @dev Useful for internal calculations
+     * @return The total raw shares
+     */
+    function totalShares() public view returns (uint256) {
+        return super.totalSupply();
     }
 
     /**
@@ -761,8 +812,10 @@ contract USDL is
     }
 
     /**
-     * @notice Internal helper that updates totalDepositedAssets to match actual yield value
+     * @notice Internal helper that updates totalDepositedAssets and rebaseIndex to match actual yield value
      * @dev Shared by manual accruals and Chainlink Automation
+     *      Updates rebaseIndex so that: newBalance = oldBalance * newIndex / oldIndex
+     *      This maintains 1:1 USDC peg while distributing yield proportionally
      * @return yieldAccrued Amount of yield realized during this call
      * @return actualValue Full vault value after accrual (USDC 6 decimals)
      */
@@ -772,11 +825,20 @@ contract USDL is
 
         lastYieldAccrualTimestamp = block.timestamp;
 
-        if (actualValue > currentDeposited) {
+        if (actualValue > currentDeposited && currentDeposited > 0) {
             yieldAccrued = actualValue - currentDeposited;
             // Pull realized gains back into USDC before updating accounting
             _harvestYield(yieldAccrued);
+            
+            // Update rebase index proportionally to distribute yield to all holders
+            // newIndex = oldIndex * actualValue / currentDeposited
+            uint256 oldIndex = rebaseIndex;
+            uint256 newIndex = (oldIndex * actualValue) / currentDeposited;
+            rebaseIndex = newIndex;
+            
             totalDepositedAssets = actualValue;
+            
+            emit RebaseIndexUpdated(oldIndex, newIndex);
             emit YieldAccrued(yieldAccrued, actualValue);
         }
     }
@@ -834,6 +896,16 @@ contract USDL is
      */
     function getYieldAssetCount() external view returns (uint256) {
         return yieldAssetList.length;
+    }
+
+    /**
+     * @notice Get the current rebase index
+     * @dev Index starts at 1e6 and increases as yield accrues
+     *      balance = rawShares * rebaseIndex / 1e6
+     * @return The current rebase index
+     */
+    function getRebaseIndex() external view returns (uint256) {
+        return rebaseIndex;
     }
 
     /**
@@ -1249,6 +1321,46 @@ contract USDL is
         }
 
         if (total > BASIS_POINTS) revert InvalidAllocation(total);
+    }
+
+    /**
+     * @notice Convert rebased amount to raw shares
+     * @dev rawShares = rebasedAmount * PRECISION / rebaseIndex
+     * @param rebasedAmount Amount in rebased terms (what user sees)
+     * @return rawShares Amount in raw shares (what's stored)
+     */
+    function _toRawShares(uint256 rebasedAmount) internal view returns (uint256 rawShares) {
+        return (rebasedAmount * REBASE_INDEX_PRECISION) / rebaseIndex;
+    }
+
+    /**
+     * @notice Transfer rebased tokens
+     * @dev Converts rebased amount to raw shares before transfer
+     * @param to Recipient address
+     * @param value Rebased amount to transfer
+     * @return True if successful
+     */
+    function transfer(address to, uint256 value) public override(ERC20Upgradeable, IERC20) returns (bool) {
+        uint256 rawShares = _toRawShares(value);
+        return super.transfer(to, rawShares);
+    }
+
+    /**
+     * @notice Transfer rebased tokens from another account
+     * @dev Converts rebased amount to raw shares before transfer
+     *      Note: Allowances are in rebased amounts for user convenience
+     * @param from Sender address
+     * @param to Recipient address  
+     * @param value Rebased amount to transfer
+     * @return True if successful
+     */
+    function transferFrom(address from, address to, uint256 value) public override(ERC20Upgradeable, IERC20) returns (bool) {
+        uint256 rawShares = _toRawShares(value);
+        // Spend allowance in rebased terms (what user approved)
+        _spendAllowance(from, _msgSender(), value);
+        // Transfer raw shares
+        _transfer(from, to, rawShares);
+        return true;
     }
 
     /// @inheritdoc ERC20Upgradeable
