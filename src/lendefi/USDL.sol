@@ -27,6 +27,7 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -44,7 +45,7 @@ contract USDL is
     IERC165,
     IGetCCIPAdmin,
     IBurnMintERC20,
-    ERC4626Upgradeable,
+    IERC4626,
     ERC20PausableUpgradeable,
     ERC20PermitUpgradeable,
     AccessControlUpgradeable,
@@ -99,6 +100,9 @@ contract USDL is
 
     /// @notice Treasury address for fees
     address public treasury;
+
+    /// @notice Underlying asset address (USDC)
+    address public assetAddress;
 
     /// @notice Deposit fee in basis points (e.g., 10 = 0.1%)
     uint256 public depositFeeBps;
@@ -198,7 +202,6 @@ contract USDL is
         if (_usdc == address(0)) revert ZeroAddress();
         if (_treasury == address(0)) revert ZeroAddress();
 
-        __ERC4626_init(IERC20(_usdc));
         __ERC20_init("Lendefi USD", "USDL");
         __ERC20Pausable_init();
         __ERC20Permit_init("Lendefi USD");
@@ -215,6 +218,7 @@ contract USDL is
         version = 1;
         ccipAdmin = _owner;
         treasury = _treasury;
+        assetAddress = _usdc;
 
         // Default deposit fee: 0.1%
         depositFeeBps = 10;
@@ -227,14 +231,22 @@ contract USDL is
         rebaseIndex = REBASE_INDEX_PRECISION;
     }
 
-    // ============ ERC-4626 Overrides ============
+    // ============ ERC-4626 Implementation ============
+
+    /**
+     * @notice Returns the address of the underlying asset
+     * @return The address of the underlying ERC-20 token
+     */
+    function asset() public view returns (address) {
+        return assetAddress;
+    }
 
     /**
      * @notice Returns total assets under management (USDC value)
      * @dev Uses internal accounting (totalDepositedAssets) to prevent donation attacks.
      *      External actors cannot manipulate this by sending USDC directly to contract.
      */
-    function totalAssets() public view override returns (uint256) {
+    function totalAssets() public view returns (uint256) {
         return totalDepositedAssets;
     }
 
@@ -281,7 +293,7 @@ contract USDL is
      * @notice Preview deposit - uses internal accounting to prevent inflation attacks
      * @dev Returns shares that would be minted for given assets (before fee)
      */
-    function previewDeposit(uint256 assets) public view override returns (uint256) {
+    function previewDeposit(uint256 assets) public view returns (uint256) {
         return _convertToSharesInternal(assets, Math.Rounding.Floor);
     }
 
@@ -289,7 +301,7 @@ contract USDL is
      * @notice Preview mint - uses internal accounting to prevent inflation attacks
      * @dev Returns assets needed to mint given shares (before fee)
      */
-    function previewMint(uint256 shares) public view override returns (uint256) {
+    function previewMint(uint256 shares) public view returns (uint256) {
         return _convertToAssetsInternal(shares, Math.Rounding.Ceil);
     }
 
@@ -297,7 +309,7 @@ contract USDL is
      * @notice Preview withdraw - uses internal accounting to prevent inflation attacks
      * @dev Returns shares that would be burned for given assets
      */
-    function previewWithdraw(uint256 assets) public view override returns (uint256) {
+    function previewWithdraw(uint256 assets) public view returns (uint256) {
         return _convertToSharesInternal(assets, Math.Rounding.Ceil);
     }
 
@@ -305,17 +317,60 @@ contract USDL is
      * @notice Preview redeem - uses internal accounting to prevent inflation attacks
      * @dev Returns assets that would be returned for given shares
      */
-    function previewRedeem(uint256 shares) public view override returns (uint256) {
+    function previewRedeem(uint256 shares) public view returns (uint256) {
         return _convertToAssetsInternal(shares, Math.Rounding.Floor);
     }
 
     /**
+     * @notice Convert assets to shares
+     * @dev Uses internal accounting to prevent inflation attacks
+     */
+    function convertToShares(uint256 assets) public view returns (uint256) {
+        return _convertToSharesInternal(assets, Math.Rounding.Floor);
+    }
+
+    /**
+     * @notice Convert shares to assets
+     * @dev Uses internal accounting to prevent inflation attacks
+     */
+    function convertToAssets(uint256 shares) public view returns (uint256) {
+        return _convertToAssetsInternal(shares, Math.Rounding.Floor);
+    }
+
+    /**
+     * @notice Maximum assets that can be deposited
+     */
+    function maxDeposit(address) public pure returns (uint256) {
+        return type(uint256).max;
+    }
+
+    /**
+     * @notice Maximum shares that can be minted
+     */
+    function maxMint(address) public pure returns (uint256) {
+        return type(uint256).max;
+    }
+
+    /**
+     * @notice Maximum assets that can be withdrawn by owner
+     */
+    function maxWithdraw(address owner) public view returns (uint256) {
+        return _convertToAssetsInternal(balanceOf(owner), Math.Rounding.Floor);
+    }
+
+    /**
+     * @notice Maximum shares that can be redeemed by owner
+     */
+    function maxRedeem(address owner) public view returns (uint256) {
+        return balanceOf(owner);
+    }
+
+    /**
      * @notice Deposit USDC and receive USDL shares
-     * @dev Overrides ERC4626 to add fee logic and yield asset allocation
+     * @dev Implements ERC4626 with fee logic and yield asset allocation
      */
     function deposit(uint256 assets, address receiver)
         public
-        override
         nonReentrant
         whenNotPaused
         notBlacklisted(msg.sender)
@@ -358,11 +413,10 @@ contract USDL is
 
     /**
      * @notice Mint exact shares by depositing USDC
-     * @dev Overrides ERC4626 to add fee logic
+     * @dev Implements ERC4626 with fee logic
      */
     function mint(uint256 shares, address receiver)
         public
-        override
         nonReentrant
         whenNotPaused
         notBlacklisted(msg.sender)
@@ -404,11 +458,10 @@ contract USDL is
 
     /**
      * @notice Withdraw USDC by burning shares
-     * @dev Overrides ERC4626 to add fee logic and yield asset redemption
+     * @dev Implements ERC4626 with fee logic and yield asset redemption
      */
     function withdraw(uint256 assets, address receiver, address owner)
         public
-        override
         nonReentrant
         whenNotPaused
         notBlacklisted(msg.sender)
@@ -447,11 +500,10 @@ contract USDL is
 
     /**
      * @notice Redeem shares for USDC
-     * @dev Overrides ERC4626 to add fee logic
+     * @dev Implements ERC4626 with fee logic
      */
     function redeem(uint256 shares, address receiver, address owner)
         public
-        override
         nonReentrant
         whenNotPaused
         notBlacklisted(msg.sender)
@@ -1396,12 +1448,12 @@ contract USDL is
 
     /**
      * @notice Returns the number of decimals for the vault token
-     * @dev Overrides ERC4626 and ERC20 to match USDC's 6 decimals.
+     * @dev Overrides ERC20 to match USDC's 6 decimals.
      *      This ensures 1:1 share-to-asset ratio at initialization and
      *      maintains consistency with the underlying USDC asset.
      * @return uint8 Always returns 6 (USDC decimals)
      */
-    function decimals() public pure override(ERC4626Upgradeable, ERC20Upgradeable) returns (uint8) {
+    function decimals() public pure override(ERC20Upgradeable, IERC20Metadata) returns (uint8) {
         return 6;
     }
 }
