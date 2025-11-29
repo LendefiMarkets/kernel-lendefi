@@ -4,6 +4,7 @@ pragma solidity 0.8.23;
 import "forge-std/Test.sol";
 import "../src/lendefi/USDL.sol";
 import {AssetType} from "../src/interfaces/IYieldProtocols.sol";
+import {IBurnMintERC20} from "../src/interfaces/IBurnMintERC20.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract MockUSDC {
@@ -606,6 +607,55 @@ contract USDLTest is Test {
         vm.prank(user1);
         vm.expectRevert();
         usdlProxy.burn(user1, 1000e6);
+    }
+
+    function test_BridgeBurnSelfAmount() public {
+        // First mint some tokens to bridge
+        vm.prank(bridge);
+        usdlProxy.mint(bridge, 1000e6);
+        assertEq(usdlProxy.balanceOf(bridge), 1000e6);
+
+        // Bridge burns from own balance using burn(uint256)
+        vm.prank(bridge);
+        usdlProxy.burn(500e6);
+        assertEq(usdlProxy.balanceOf(bridge), 500e6);
+    }
+
+    function test_BridgeBurnSelfZeroAmountReverts() public {
+        vm.prank(bridge);
+        vm.expectRevert(USDL.ZeroAmount.selector);
+        usdlProxy.burn(0);
+    }
+
+    function test_BridgeBurnFrom() public {
+        // User deposits to get tokens
+        vm.startPrank(user1);
+        usdc.approve(address(usdlProxy), 1000e6);
+        usdlProxy.deposit(1000e6, user1);
+        
+        // User approves bridge to burn
+        usdlProxy.approve(bridge, 500e6);
+        vm.stopPrank();
+
+        uint256 balanceBefore = usdlProxy.balanceOf(user1);
+
+        // Bridge burns using burnFrom
+        vm.prank(bridge);
+        usdlProxy.burnFrom(user1, 500e6);
+
+        assertEq(usdlProxy.balanceOf(user1), balanceBefore - 500e6);
+    }
+
+    function test_BridgeBurnFromZeroAddressReverts() public {
+        vm.prank(bridge);
+        vm.expectRevert(USDL.ZeroAddress.selector);
+        usdlProxy.burnFrom(address(0), 1000e6);
+    }
+
+    function test_BridgeBurnFromZeroAmountReverts() public {
+        vm.prank(bridge);
+        vm.expectRevert(USDL.ZeroAmount.selector);
+        usdlProxy.burnFrom(user1, 0);
     }
 
     // ============ Yield Asset Tests (12) ============
@@ -1594,6 +1644,10 @@ contract USDLTest is Test {
 
     function test_SupportsInterfaceIGetCCIPAdmin() public view {
         assertTrue(usdlProxy.supportsInterface(type(IGetCCIPAdmin).interfaceId));
+    }
+
+    function test_SupportsInterfaceIBurnMintERC20() public view {
+        assertTrue(usdlProxy.supportsInterface(type(IBurnMintERC20).interfaceId));
     }
 
     function test_Decimals() public view {

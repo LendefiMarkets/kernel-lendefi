@@ -15,6 +15,7 @@ docs/
 
 lcov.info
 coverage/
+archive/
 
 # node
 node_modules/

@@ -33,6 +33,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IGetCCIPAdmin} from "../interfaces/IGetCCIPAdmin.sol";
+import {IBurnMintERC20} from "../interfaces/IBurnMintERC20.sol";
 import {
     AssetType,
     IERC4626 as IExternalERC4626,
@@ -45,6 +46,7 @@ import {AutomationCompatibleInterface} from "../interfaces/AutomationCompatibleI
 contract USDL is
     IERC165,
     IGetCCIPAdmin,
+    IBurnMintERC20,
     ERC4626Upgradeable,
     ERC20PausableUpgradeable,
     ERC20PermitUpgradeable,
@@ -472,6 +474,33 @@ contract USDL is
         _burn(account, amount);
     }
 
+    /**
+     * @notice Burn shares from caller's balance
+     * @dev Conforms to Chainlink IBurnMintERC20 signature: burn(uint256)
+     *      Only callable by BRIDGE_ROLE for CCIP compatibility
+     * @param amount Amount of shares to burn
+     */
+    function burn(uint256 amount) external whenNotPaused onlyRole(BRIDGE_ROLE) {
+        if (amount == 0) revert ZeroAmount();
+
+        _burn(msg.sender, amount);
+    }
+
+    /**
+     * @notice Burn shares from account using allowance
+     * @dev Conforms to Chainlink IBurnMintERC20 signature: burnFrom(address,uint256)
+     *      Only callable by BRIDGE_ROLE for CCIP compatibility
+     * @param account Address to burn from
+     * @param amount Amount of shares to burn
+     */
+    function burnFrom(address account, uint256 amount) external whenNotPaused onlyRole(BRIDGE_ROLE) {
+        if (account == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+
+        _spendAllowance(account, msg.sender, amount);
+        _burn(account, amount);
+    }
+
     // ============ Yield Asset Management ============
 
     /**
@@ -837,7 +866,7 @@ contract USDL is
     {
         return interfaceId == type(IERC20).interfaceId || interfaceId == type(IERC4626).interfaceId
             || interfaceId == type(IERC165).interfaceId || interfaceId == type(IAccessControl).interfaceId
-            || interfaceId == type(IGetCCIPAdmin).interfaceId
+            || interfaceId == type(IGetCCIPAdmin).interfaceId || interfaceId == type(IBurnMintERC20).interfaceId
             || interfaceId == type(AutomationCompatibleInterface).interfaceId;
     }
 
