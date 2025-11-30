@@ -72,7 +72,7 @@ contract MockERC4626Vault {
     }
 
     function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
-        depositToken.transferFrom(msg.sender, address(this), assets);
+        require(depositToken.transferFrom(msg.sender, address(this), assets), "Transfer failed");
         usdcReserve += assets;
         shares = assets;
         balanceOf[receiver] += shares;
@@ -86,7 +86,7 @@ contract MockERC4626Vault {
         assets = (shares * yieldMultiplier) / 1e18;
         if (usdcReserve >= assets) {
             usdcReserve -= assets;
-            depositToken.transfer(receiver, assets);
+            require(depositToken.transfer(receiver, assets), "Transfer failed");
         } else {
             depositToken.mint(receiver, assets);
         }
@@ -791,9 +791,12 @@ contract USDLTest is Test {
         usdlProxy.deposit(1000e6, user1);
         vm.stopPrank();
 
+        // Get the balance in yield vault to construct expected error
+        uint256 vaultBalance = yieldVault.balanceOf(address(usdlProxy));
+
         // Try to remove - should revert because funds exist
         vm.prank(manager);
-        vm.expectRevert("Withdraw funds first");
+        vm.expectRevert(abi.encodeWithSelector(USDL.FundsRemaining.selector, vaultBalance));
         usdlProxy.removeYieldAsset(address(yieldVault));
     }
 
@@ -1395,13 +1398,8 @@ contract USDLTest is Test {
         uint256 sharesFromDeposit = usdlProxy.deposit(depositAmount, user1);
         vm.stopPrank();
 
-        // Calculate what mint would need for same shares
-        // netAssets for those shares = sharesFromDeposit (1:1 initially)
-        // But now there are assets in vault, so ratio is established
-
-        uint256 assetsNeeded = usdlProxy.previewMint(sharesFromDeposit);
-        uint256 feeForMint = (assetsNeeded * 10) / 9990;
-        uint256 totalForMint = assetsNeeded + feeForMint;
+        // previewMint returns total assets needed (including fee)
+        uint256 totalForMint = usdlProxy.previewMint(sharesFromDeposit);
 
         // Second user: mint same number of shares
         vm.startPrank(user2);
@@ -1411,8 +1409,8 @@ contract USDLTest is Test {
 
         // Both users should have same shares
         assertEq(usdlProxy.balanceOf(user2), sharesFromDeposit, "Shares mismatch");
-        // Verify assets spent is close to our calculated totalForMint (may differ slightly due to rounding)
-        assertApproxEqAbs(assetsForMint, totalForMint, 1, "Assets for mint should match calculated total");
+        // Verify assets spent matches previewMint (ERC4626 compliance)
+        assertApproxEqAbs(assetsForMint, totalForMint, 1, "Assets for mint should match previewMint");
     }
 
     function test_FeeWithYieldAccrual() public {
@@ -1715,7 +1713,7 @@ contract USDLTest is Test {
         vm.startPrank(user1);
         usdc.approve(address(usdlProxy), 1000e6);
         usdlProxy.deposit(1000e6, user1);
-        usdlProxy.transfer(user2, 100e6);
+        assertTrue(usdlProxy.transfer(user2, 100e6));
         vm.stopPrank();
 
         assertEq(usdlProxy.balanceOf(user2), 100e6);
@@ -1729,7 +1727,7 @@ contract USDLTest is Test {
         vm.stopPrank();
 
         vm.prank(user2);
-        usdlProxy.transferFrom(user1, user2, 100e6);
+        assertTrue(usdlProxy.transferFrom(user1, user2, 100e6));
 
         assertEq(usdlProxy.balanceOf(user2), 100e6);
     }
