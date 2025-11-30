@@ -222,12 +222,12 @@ contract USDL is
     /// @param caller BRIDGE_ROLE contract performing the mint
     /// @param account Recipient receiving freshly minted shares
     /// @param amount Number of shares minted
-    event BridgeMint(address indexed caller, address indexed account, uint256 amount);
+    event BridgeMint(address indexed caller, address indexed account, uint256 indexed amount);
     /// @notice Emitted when the bridge burns shares as part of CCIP flows
     /// @param caller BRIDGE_ROLE contract initiating the burn
     /// @param account Address whose shares were burned
     /// @param amount Number of shares burned
-    event BridgeBurn(address indexed caller, address indexed account, uint256 amount);
+    event BridgeBurn(address indexed caller, address indexed account, uint256 indexed amount);
 
     // ============ Errors ============
 
