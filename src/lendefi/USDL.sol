@@ -37,8 +37,6 @@ pragma solidity 0.8.23;
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {ERC20PausableUpgradeable} from
     "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
-import {ERC20PermitUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -62,8 +60,8 @@ contract USDL is
     IGetCCIPAdmin,
     IBurnMintERC20,
     IERC4626,
+    ERC20Upgradeable,
     ERC20PausableUpgradeable,
-    ERC20PermitUpgradeable,
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     UUPSUpgradeable,
@@ -220,7 +218,6 @@ contract USDL is
 
         __ERC20_init("Lendefi USD", "USDL");
         __ERC20Pausable_init();
-        __ERC20Permit_init("Lendefi USD");
         __AccessControl_init();
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
