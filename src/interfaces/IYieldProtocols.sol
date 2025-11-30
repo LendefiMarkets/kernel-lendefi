@@ -17,7 +17,6 @@ enum AssetType {
     ERC4626, // Standard tokenized vault (sDAI, Morpho vaults)
     AAVE_V3, // Aave V3 lending pool
     ONDO_OUSG // Ondo OUSG InstantManager (requires whitelist)
-
 }
 
 // ============ ERC-4626 Interface ============

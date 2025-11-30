@@ -21,10 +21,7 @@ library ExecLib {
 
     event TryExecuteUnsuccessful(uint256 batchExecutionindex, bytes result);
 
-    function execute(ExecMode execMode, bytes calldata executionCalldata)
-        internal
-        returns (bytes[] memory returnData)
-    {
+    function execute(ExecMode execMode, bytes calldata executionCalldata) internal returns (bytes[] memory returnData) {
         (CallType callType, ExecType execType,,) = decode(execMode);
 
         // check if calltype is batch or single

@@ -106,8 +106,9 @@ abstract contract KernelTestBase is TestPlus, Test {
             }
             return false;
         } else if (vType == VALIDATION_TYPE_PERMISSION) {
-            return address(kernel.validationConfig(ValidatorLib.permissionToIdentifier(enabledPermission)).hook)
-                == address(0);
+            return
+                address(kernel.validationConfig(ValidatorLib.permissionToIdentifier(enabledPermission)).hook)
+                    == address(0);
         } else if (vType == VALIDATION_TYPE_ROOT) {
             return false;
         } else {
@@ -193,8 +194,9 @@ abstract contract KernelTestBase is TestPlus, Test {
         if (isReplayable) {
             digest = chainAgnosticHashTypedData(address(kernel), "Kernel", "0.3.3", hash);
         } else {
-            digest =
-                keccak256(abi.encodePacked("\x19\x01", _buildDomainSeparator("Kernel", "0.3.3", address(kernel)), hash));
+            digest = keccak256(
+                abi.encodePacked("\x19\x01", _buildDomainSeparator("Kernel", "0.3.3", address(kernel)), hash)
+            );
         }
 
         return digest;
@@ -280,7 +282,8 @@ abstract contract KernelTestBase is TestPlus, Test {
             nonce: encodeNonce(vType, enable),
             initCode: address(kernel).code.length == 0
                 ? abi.encodePacked(
-                    address(staker), abi.encodeWithSelector(staker.deployWithFactory.selector, factory, initData(), bytes32(0))
+                    address(staker),
+                    abi.encodeWithSelector(staker.deployWithFactory.selector, factory, initData(), bytes32(0))
                 )
                 : abi.encodePacked(hex""),
             callData: callData,
@@ -497,17 +500,16 @@ abstract contract KernelTestBase is TestPlus, Test {
         virtual
         returns (bytes memory data)
     {
-        MockPolicy(address(permissionConfig.policies[0])).sudoSetValidSig(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), "policy1"
-        );
-        MockPolicy(address(permissionConfig.policies[1])).sudoSetValidSig(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), "policy2"
-        );
-        MockSigner(address(permissionConfig.signer)).sudoSetValidSig(
-            address(kernel),
-            bytes32(PermissionId.unwrap(enabledPermission)),
-            success ? abi.encodePacked("userOpSig") : abi.encodePacked("NO")
-        );
+        MockPolicy(address(permissionConfig.policies[0]))
+            .sudoSetValidSig(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), "policy1");
+        MockPolicy(address(permissionConfig.policies[1]))
+            .sudoSetValidSig(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), "policy2");
+        MockSigner(address(permissionConfig.signer))
+            .sudoSetValidSig(
+                address(kernel),
+                bytes32(PermissionId.unwrap(enabledPermission)),
+                success ? abi.encodePacked("userOpSig") : abi.encodePacked("NO")
+            );
         bytes[] memory sigs = _getPolicyAndSignerSig(op, success);
         for (uint8 i = 0; i < sigs.length - 1; i++) {
             if (sigs[i].length > 0) {
@@ -518,15 +520,12 @@ abstract contract KernelTestBase is TestPlus, Test {
     }
 
     function _permissionSignDigest(bytes32 digest, bool success) internal virtual returns (bytes memory data) {
-        MockPolicy(address(permissionConfig.policies[0])).sudoSetPass(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), true
-        );
-        MockPolicy(address(permissionConfig.policies[1])).sudoSetPass(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), true
-        );
-        MockSigner(address(permissionConfig.signer)).sudoSetPass(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), success
-        );
+        MockPolicy(address(permissionConfig.policies[0]))
+            .sudoSetPass(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), true);
+        MockPolicy(address(permissionConfig.policies[1]))
+            .sudoSetPass(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), true);
+        MockSigner(address(permissionConfig.signer))
+            .sudoSetPass(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), success);
         return "hello world";
     }
 
@@ -887,7 +886,9 @@ abstract contract KernelTestBase is TestPlus, Test {
                         ? address(mockHook)
                         : withHook == HookInfo.NoHook ? address(1) : address(0),
                     withHook == HookInfo.WithHook
-                        ? abi.encode(abi.encodePacked(hex"00", "fallbackData"), abi.encodePacked(bytes1(0xff), "hookData"))
+                        ? abi.encode(
+                            abi.encodePacked(hex"00", "fallbackData"), abi.encodePacked(bytes1(0xff), "hookData")
+                        )
                         : abi.encode(abi.encodePacked(hex"00", "fallbackData"), abi.encodePacked(""))
                 )
             ),

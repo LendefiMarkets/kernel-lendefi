@@ -14,7 +14,6 @@ interface ILendefiStaking {
         BASIC, // >= 1,000 LDF - 50% subsidy
         PREMIUM, // >= 10,000 LDF - 90% subsidy
         ULTIMATE // >= 100,000 LDF - 100% subsidy
-
     }
 
     // ============ Structs ============

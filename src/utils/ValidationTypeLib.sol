@@ -10,7 +10,9 @@ library ValidatorLib {
     function encodeFlag(bool skipUserOp, bool skipSignature) internal pure returns (PassFlag flag) {
         assembly {
             if skipUserOp { flag := 0x0001000000000000000000000000000000000000000000000000000000000000 }
-            if skipSignature { flag := or(flag, 0x0002000000000000000000000000000000000000000000000000000000000000) }
+            if skipSignature {
+                flag := or(flag, 0x0002000000000000000000000000000000000000000000000000000000000000)
+            }
         }
     }
 

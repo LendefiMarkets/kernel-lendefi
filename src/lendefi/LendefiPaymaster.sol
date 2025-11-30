@@ -301,11 +301,7 @@ contract LendefiPaymaster is BasePaymaster, ReentrancyGuard {
     /**
      * @dev Pack validation data for ERC-4337
      */
-    function _packValidationData(bool sigFailed, uint48 validUntil, uint48 validAfter)
-        internal
-        pure
-        returns (uint256)
-    {
+    function _packValidationData(bool sigFailed, uint48 validUntil, uint48 validAfter) internal pure returns (uint256) {
         return (sigFailed ? 1 : 0) | (uint256(validUntil) << 160) | (uint256(validAfter) << 208);
     }
 

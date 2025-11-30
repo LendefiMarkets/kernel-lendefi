@@ -100,10 +100,7 @@ contract LendefiStakingPaymaster is
      * @param _stakingContract LendefiStaking contract address
      * @param _owner Owner address
      */
-    function initialize(IEntryPoint _entryPoint, LendefiStaking _stakingContract, address _owner)
-        external
-        initializer
-    {
+    function initialize(IEntryPoint _entryPoint, LendefiStaking _stakingContract, address _owner) external initializer {
         if (address(_entryPoint) == address(0)) revert ZeroAddress();
         if (address(_stakingContract) == address(0)) revert ZeroAddress();
         if (_owner == address(0)) revert ZeroAddress();
@@ -305,7 +302,12 @@ contract LendefiStakingPaymaster is
     /**
      * @dev Internal validation logic
      */
-    function _validatePaymasterUserOp(PackedUserOperation calldata userOp, bytes32, /*userOpHash*/ uint256 maxCost)
+    function _validatePaymasterUserOp(
+        PackedUserOperation calldata userOp,
+        bytes32,
+        /*userOpHash*/
+        uint256 maxCost
+    )
         internal
         view
         returns (bytes memory context, uint256 validationData)
@@ -355,8 +357,7 @@ contract LendefiStakingPaymaster is
     {
         if (mode == PostOpMode.opSucceeded || mode == PostOpMode.opReverted) {
             (
-                address user,
-                , // estimatedGas - no longer used
+                address user,, // estimatedGas - no longer used
                 ,
                 LendefiStaking.Tier tier
             ) = abi.decode(context, (address, uint256, uint256, LendefiStaking.Tier));

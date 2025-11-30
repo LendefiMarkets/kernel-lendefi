@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >= 0.6.12;
+pragma solidity >=0.6.12;
 
 import {ModexpInverse, ModexpSqrt} from "./ModExp.sol";
 import {BNPairingPrecompileCostEstimator} from "./BNPairingPrecompileCostEstimator.sol";

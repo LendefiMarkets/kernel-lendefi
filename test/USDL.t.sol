@@ -870,7 +870,9 @@ contract USDLTest is Test {
 
         uint256 expectedYield = (netDeposited * (multiplier - 1e18)) / 1e18;
         assertApproxEqAbs(usdc.balanceOf(address(usdlProxy)), expectedYield, 1, "harvested yield should sit in USDC");
-        assertApproxEqAbs(usdlProxy.totalAssets(), netDeposited + expectedYield, 1, "accounting reflects realized yield");
+        assertApproxEqAbs(
+            usdlProxy.totalAssets(), netDeposited + expectedYield, 1, "accounting reflects realized yield"
+        );
     }
 
     function test_DepositAllocatesToYieldAsset() public {

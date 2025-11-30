@@ -55,21 +55,21 @@ contract MockERC4626Vault {
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
     uint256 public totalSupply;
-    uint256 public usdcReserve;  // Track USDC held in vault for yield
-    uint256 public yieldRate = 1e6;  // 1.0x by default (6 decimals like USDC)
+    uint256 public usdcReserve; // Track USDC held in vault for yield
+    uint256 public yieldRate = 1e6; // 1.0x by default (6 decimals like USDC)
 
     constructor(address _depositToken) {
         depositToken = MockUSDC(_depositToken);
     }
 
     function setYieldRate(uint256 _rate) external {
-        yieldRate = _rate;  // e.g., 1.1e6 for 10% yield
+        yieldRate = _rate; // e.g., 1.1e6 for 10% yield
     }
 
     function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
         depositToken.transferFrom(msg.sender, address(this), assets);
         usdcReserve += assets;
-        shares = assets;  // 1:1 shares to assets at deposit time
+        shares = assets; // 1:1 shares to assets at deposit time
         balanceOf[receiver] += shares;
         totalSupply += shares;
     }
@@ -162,30 +162,30 @@ contract USDLStressTest is Test {
     // ============ Deep Stress Test (1) ============
     function test_DeepStressTestMultipleUsersSequentialTransactions() public {
         console.log("\n=== Starting Deep Stress Test ===");
-        
+
         console.log("Step 1: Setup yield asset");
         _setupYieldAsset();
         console.log("  OK: Yield asset added");
-        
+
         console.log("Step 2: Phase 1 - Initial deposits");
         _phase1_InitialDeposits();
         console.log("  Total assets: %d", usdlProxy.totalAssets());
         console.log("  Total supply: %d", usdlProxy.totalSupply());
-        
+
         console.log("Step 3: Phase 2 - First yield accrual");
         _phase2_FirstYieldAccrual();
         console.log("  Total assets: %d", usdlProxy.totalAssets());
         console.log("  Total supply: %d", usdlProxy.totalSupply());
-        
+
         console.log("Step 4: Phase 7 - Final withdrawals");
         console.log("  User1 shares before: %d", usdlProxy.balanceOf(user1));
         console.log("  User1 maxRedeem: %d", usdlProxy.maxRedeem(user1));
         _phase7_FinalWithdrawals();
         console.log("  User1 shares after: %d", usdlProxy.balanceOf(user1));
-        
+
         console.log("Step 5: Verify final state");
         _verifyFinalState();
-        
+
         console.log("=== Test Complete ===\n");
     }
 
@@ -215,13 +215,13 @@ contract USDLStressTest is Test {
         console.log("    Total assets: %d", usdlProxy.totalAssets());
         console.log("    Total deposited: %d", usdlProxy.totalDepositedAssets());
         console.log("    Rebase index: %d", usdlProxy.rebaseIndex());
-        
+
         // Simulate yield: mint 10% more USDC into the yield vault to represent gains
         uint256 shareBalance = yieldVault.balanceOf(address(usdlProxy));
         uint256 yieldAmount = (shareBalance * 10) / 100; // 10% yield
         usdc.mint(address(yieldVault), yieldAmount);
         console.log("  Minted %d USDC into yield vault (10% yield)", yieldAmount);
-        
+
         vm.prank(manager);
         usdlProxy.accrueYield();
         console.log("  Yield accrual complete");
@@ -231,11 +231,11 @@ contract USDLStressTest is Test {
         console.log("    Total assets: %d", usdlProxy.totalAssets());
         console.log("    Total deposited: %d", usdlProxy.totalDepositedAssets());
         console.log("    Rebase index: %d", usdlProxy.rebaseIndex());
-        
+
         console.log("  After yield accrual:");
         console.log("    Total assets: %d", usdlProxy.totalAssets());
         console.log("    Total deposited: %d", usdlProxy.totalDepositedAssets());
-        
+
         // Note: Yield may not increase if the harvest wasn't able to realize gains
         // This is okay for a stress test - we're testing multi-user flows
     }
@@ -268,12 +268,12 @@ contract USDLStressTest is Test {
 
     function _phase4_SecondYieldAccrual() internal {
         uint256 totalAssetsBefore = usdlProxy.totalAssets();
-        
+
         // Mint 26.5% more USDC into vault reserve (1.265x rate)
         uint256 currentReserve = usdc.balanceOf(address(yieldVault));
         uint256 yieldToAdd = (currentReserve * 265) / 1000; // 26.5% yield
         usdc.mint(address(yieldVault), yieldToAdd);
-        
+
         vm.prank(manager);
         usdlProxy.accrueYield();
         assertGt(usdlProxy.totalAssets(), totalAssetsBefore, "Total assets should increase after second yield");
@@ -301,12 +301,12 @@ contract USDLStressTest is Test {
 
     function _phase6_FinalYieldAccrual() internal {
         uint256 totalAssetsBefore = usdlProxy.totalAssets();
-        
+
         // Mint 51.8% more USDC into vault reserve (1.518x rate)
         uint256 currentReserve = usdc.balanceOf(address(yieldVault));
         uint256 yieldToAdd = (currentReserve * 518) / 1000; // 51.8% yield
         usdc.mint(address(yieldVault), yieldToAdd);
-        
+
         vm.prank(manager);
         usdlProxy.accrueYield();
         assertGt(usdlProxy.totalAssets(), totalAssetsBefore, "Total assets should increase after final yield");

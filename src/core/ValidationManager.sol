@@ -275,9 +275,8 @@ abstract contract ValidationManager is EIP712, SelectorManager, HookManager, Exe
         unchecked {
             for (uint256 i = 0; i < data.length - 1; i++) {
                 state.permissionConfig[permission].policyData.push(PolicyData.wrap(bytes22(data[i][0:22])));
-                IPolicy(address(bytes20(data[i][2:22]))).onInstall(
-                    abi.encodePacked(bytes32(PermissionId.unwrap(permission)), data[i][22:])
-                );
+                IPolicy(address(bytes20(data[i][2:22])))
+                    .onInstall(abi.encodePacked(bytes32(PermissionId.unwrap(permission)), data[i][22:]));
                 emit IERC7579Account.ModuleInstalled(MODULE_TYPE_POLICY, address(bytes20(data[i][2:22])));
             }
             // last permission data will be signer
@@ -336,7 +335,9 @@ abstract contract ValidationManager is EIP712, SelectorManager, HookManager, Exe
                 );
             } else if (vType == VALIDATION_TYPE_7702) {
                 validationData = _verify7702Signature(ECDSA.toEthSignedMessageHash(userOpHash), userOpSig)
-                    == ERC1271_MAGICVALUE ? ValidationData.wrap(0) : ValidationData.wrap(1);
+                    == ERC1271_MAGICVALUE
+                    ? ValidationData.wrap(0)
+                    : ValidationData.wrap(1);
             } else {
                 revert InvalidValidationType();
             }
@@ -620,9 +621,10 @@ abstract contract ValidationManager is EIP712, SelectorManager, HookManager, Exe
 
                 if (PassFlag.unwrap(mSig.flag) & PassFlag.unwrap(SKIP_SIGNATURE) == 0) {
                     ValidationData vd = ValidationData.wrap(
-                        mSig.policy.checkSignaturePolicy(
-                            bytes32(PermissionId.unwrap(mSig.permission)), mSig.caller, mSig.digest, mSig.permSig
-                        )
+                        mSig.policy
+                            .checkSignaturePolicy(
+                                bytes32(PermissionId.unwrap(mSig.permission)), mSig.caller, mSig.digest, mSig.permSig
+                            )
                     );
                     address result = getValidationResult(vd);
                     if (result != address(0)) {

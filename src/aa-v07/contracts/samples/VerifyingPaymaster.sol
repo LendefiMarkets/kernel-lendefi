@@ -75,7 +75,12 @@ contract VerifyingPaymaster is BasePaymaster {
         PackedUserOperation calldata userOp,
         bytes32, /*userOpHash*/
         uint256 requiredPreFund
-    ) internal view override returns (bytes memory context, uint256 validationData) {
+    )
+        internal
+        view
+        override
+        returns (bytes memory context, uint256 validationData)
+    {
         (requiredPreFund);
 
         (uint48 validUntil, uint48 validAfter, bytes calldata signature) =

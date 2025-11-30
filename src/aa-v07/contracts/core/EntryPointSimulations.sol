@@ -94,8 +94,9 @@ contract EntryPointSimulations is EntryPoint, IEntryPointSimulations {
         initSenderCreator();
 
         try this._validateSenderAndPaymaster(userOp.initCode, userOp.sender, userOp.paymasterAndData) {
-            // solhint-disable-next-line no-empty-blocks
-        } catch Error(string memory revertReason) {
+        // solhint-disable-next-line no-empty-blocks
+        }
+        catch Error(string memory revertReason) {
             if (bytes(revertReason).length != 0) {
                 revert FailedOp(0, revertReason);
             }

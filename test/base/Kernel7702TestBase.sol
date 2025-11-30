@@ -98,8 +98,9 @@ contract Kernel7702TestBase is TestPlus, Test {
             }
             return false;
         } else if (vType == VALIDATION_TYPE_PERMISSION) {
-            return address(kernel.validationConfig(ValidatorLib.permissionToIdentifier(enabledPermission)).hook)
-                == address(0);
+            return
+                address(kernel.validationConfig(ValidatorLib.permissionToIdentifier(enabledPermission)).hook)
+                    == address(0);
         } else if (vType == VALIDATION_TYPE_ROOT) {
             return false;
         } else {
@@ -186,8 +187,9 @@ contract Kernel7702TestBase is TestPlus, Test {
         if (isReplayable) {
             digest = chainAgnosticHashTypedData(address(kernel), "Kernel", "0.3.3", hash);
         } else {
-            digest =
-                keccak256(abi.encodePacked("\x19\x01", _buildDomainSeparator("Kernel", "0.3.3", address(kernel)), hash));
+            digest = keccak256(
+                abi.encodePacked("\x19\x01", _buildDomainSeparator("Kernel", "0.3.3", address(kernel)), hash)
+            );
         }
 
         return digest;
@@ -456,17 +458,16 @@ contract Kernel7702TestBase is TestPlus, Test {
         virtual
         returns (bytes memory data)
     {
-        MockPolicy(address(permissionConfig.policies[0])).sudoSetValidSig(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), "policy1"
-        );
-        MockPolicy(address(permissionConfig.policies[1])).sudoSetValidSig(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), "policy2"
-        );
-        MockSigner(address(permissionConfig.signer)).sudoSetValidSig(
-            address(kernel),
-            bytes32(PermissionId.unwrap(enabledPermission)),
-            success ? abi.encodePacked("userOpSig") : abi.encodePacked("NO")
-        );
+        MockPolicy(address(permissionConfig.policies[0]))
+            .sudoSetValidSig(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), "policy1");
+        MockPolicy(address(permissionConfig.policies[1]))
+            .sudoSetValidSig(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), "policy2");
+        MockSigner(address(permissionConfig.signer))
+            .sudoSetValidSig(
+                address(kernel),
+                bytes32(PermissionId.unwrap(enabledPermission)),
+                success ? abi.encodePacked("userOpSig") : abi.encodePacked("NO")
+            );
         bytes[] memory sigs = _getPolicyAndSignerSig(op, success);
         for (uint8 i = 0; i < sigs.length - 1; i++) {
             if (sigs[i].length > 0) {
@@ -477,15 +478,12 @@ contract Kernel7702TestBase is TestPlus, Test {
     }
 
     function _permissionSignDigest(bytes32 digest, bool success) internal virtual returns (bytes memory data) {
-        MockPolicy(address(permissionConfig.policies[0])).sudoSetPass(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), true
-        );
-        MockPolicy(address(permissionConfig.policies[1])).sudoSetPass(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), true
-        );
-        MockSigner(address(permissionConfig.signer)).sudoSetPass(
-            address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), success
-        );
+        MockPolicy(address(permissionConfig.policies[0]))
+            .sudoSetPass(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), true);
+        MockPolicy(address(permissionConfig.policies[1]))
+            .sudoSetPass(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), true);
+        MockSigner(address(permissionConfig.signer))
+            .sudoSetPass(address(kernel), bytes32(PermissionId.unwrap(enabledPermission)), success);
         return "hello world";
     }
 
@@ -846,7 +844,9 @@ contract Kernel7702TestBase is TestPlus, Test {
                         ? address(mockHook)
                         : withHook == HookInfo.NoHook ? address(1) : address(0),
                     withHook == HookInfo.WithHook
-                        ? abi.encode(abi.encodePacked(hex"00", "fallbackData"), abi.encodePacked(bytes1(0xff), "hookData"))
+                        ? abi.encode(
+                            abi.encodePacked(hex"00", "fallbackData"), abi.encodePacked(bytes1(0xff), "hookData")
+                        )
                         : abi.encode(abi.encodePacked(hex"00", "fallbackData"), abi.encodePacked(""))
                 )
             ),
