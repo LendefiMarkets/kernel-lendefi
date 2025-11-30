@@ -218,6 +218,16 @@ contract USDL is
     /// @param oldIndex Previous rebase index (indexed for gas optimization)
     /// @param newIndex New rebase index (indexed for gas optimization)
     event RebaseIndexUpdated(uint256 indexed oldIndex, uint256 indexed newIndex);
+    /// @notice Emitted when the bridge mints shares on this chain
+    /// @param caller BRIDGE_ROLE contract performing the mint
+    /// @param account Recipient receiving freshly minted shares
+    /// @param amount Number of shares minted
+    event BridgeMint(address indexed caller, address indexed account, uint256 amount);
+    /// @notice Emitted when the bridge burns shares as part of CCIP flows
+    /// @param caller BRIDGE_ROLE contract initiating the burn
+    /// @param account Address whose shares were burned
+    /// @param amount Number of shares burned
+    event BridgeBurn(address indexed caller, address indexed account, uint256 amount);
 
     // ============ Errors ============
 
@@ -566,6 +576,7 @@ contract USDL is
         if (account == address(this)) revert InvalidRecipient(account);
 
         _mint(account, amount);
+        emit BridgeMint(msg.sender, account, amount);
     }
 
     /**
@@ -579,6 +590,7 @@ contract USDL is
         if (amount == 0) revert ZeroAmount();
 
         _burn(account, amount);
+        emit BridgeBurn(msg.sender, account, amount);
     }
 
     /**
@@ -591,6 +603,7 @@ contract USDL is
         if (amount == 0) revert ZeroAmount();
 
         _burn(msg.sender, amount);
+        emit BridgeBurn(msg.sender, msg.sender, amount);
     }
 
     /**
@@ -606,6 +619,7 @@ contract USDL is
 
         _spendAllowance(account, msg.sender, amount);
         _burn(account, amount);
+        emit BridgeBurn(msg.sender, account, amount);
     }
 
     // ============ EXTERNAL VIEW ============
