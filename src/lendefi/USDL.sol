@@ -849,12 +849,18 @@ contract USDL is
      * @inheritdoc AutomationCompatibleInterface
      */
     function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
-        bool shouldAccrue;
-        uint256 actualValue;
-        uint256 currentDeposited;
-        (shouldAccrue, actualValue, currentDeposited) = _shouldAccrueYield();
+        uint256 interval = yieldAccrualInterval;
+        if (interval == 0) {
+            return (false, "");
+        }
 
-        if (shouldAccrue) {
+        if (block.timestamp - lastYieldAccrualTimestamp < interval) {
+            return (false, "");
+        }
+
+        uint256 currentDeposited = totalDepositedAssets;
+        uint256 actualValue = _calculateActualYieldValue(currentDeposited);
+        if (actualValue > currentDeposited) {
             upkeepNeeded = true;
             performData = abi.encode(actualValue, currentDeposited);
         }
@@ -864,36 +870,16 @@ contract USDL is
      * @inheritdoc AutomationCompatibleInterface
      */
     function performUpkeep(bytes calldata) external override {
-        (bool upkeepNeeded,,) = _shouldAccrueYield();
-        if (!upkeepNeeded) revert UpkeepNotNeeded();
+        uint256 interval = yieldAccrualInterval;
+        if (interval == 0) revert UpkeepNotNeeded();
+
+        if (block.timestamp - lastYieldAccrualTimestamp < interval) revert UpkeepNotNeeded();
+
+        uint256 currentDeposited = totalDepositedAssets;
+        uint256 actualValue = _calculateActualYieldValue(currentDeposited);
+        if (actualValue <= currentDeposited) revert UpkeepNotNeeded();
 
         _accrueYieldInternal();
-    }
-
-    /**
-     * @notice Determines whether automated yield accrual should run
-     * @dev Used by Chainlink Automation to avoid unnecessary performUpkeep() calls
-     * @return upkeepNeeded True when interval elapsed and there is positive yield delta
-     * @return actualValue Aggregate value of yield assets (USDC 6 decimals)
-     * @return currentDeposited Currently tracked totalDepositedAssets value
-     */
-    function _shouldAccrueYield()
-        internal
-        view
-        returns (bool upkeepNeeded, uint256 actualValue, uint256 currentDeposited)
-    {
-        uint256 interval = yieldAccrualInterval;
-        if (interval == 0) {
-            return (false, 0, totalDepositedAssets);
-        }
-
-        if (block.timestamp - lastYieldAccrualTimestamp < interval) {
-            return (false, 0, totalDepositedAssets);
-        }
-
-        actualValue = _calculateActualYieldValue();
-        currentDeposited = totalDepositedAssets;
-        upkeepNeeded = actualValue > currentDeposited;
     }
 
     /**
@@ -905,8 +891,8 @@ contract USDL is
      * @return actualValue Full vault value after accrual (USDC 6 decimals)
      */
     function _accrueYieldInternal() internal returns (uint256 yieldAccrued, uint256 actualValue) {
-        actualValue = _calculateActualYieldValue();
         uint256 currentDeposited = totalDepositedAssets;
+        actualValue = _calculateActualYieldValue(currentDeposited);
 
         lastYieldAccrualTimestamp = block.timestamp;
 
@@ -917,15 +903,9 @@ contract USDL is
 
             // After harvest, recalculate with all USDC now in contract
             // (not just tracked portion, since _harvestYield deposits harvested USDC here)
-            uint256 vaultValue = 0;
-            uint256 length = yieldAssetList.length;
-            for (uint256 i = 0; i < length; i++) {
-                address token = yieldAssetList[i];
-                YieldAsset storage yieldAsset = yieldAssets[token];
-                if (!yieldAsset.active) continue;
-                vaultValue += _getYieldAssetValue(yieldAsset);
-            }
-            uint256 usdcBalance = IERC20(asset()).balanceOf(address(this));
+            uint256 vaultValue = _sumActiveYieldAssetValue();
+            IERC20 usdc = IERC20(assetAddress);
+            uint256 usdcBalance = usdc.balanceOf(address(this));
             actualValue = vaultValue + usdcBalance;
 
             // Update rebase index proportionally to distribute yield to all holders
@@ -1090,23 +1070,30 @@ contract USDL is
      *      Used for yield accrual to update internal accounting
      * @return total Total value of all yield assets plus any USDC held
      */
-    function _calculateActualYieldValue() internal view returns (uint256 total) {
-        // Add value of all yield assets
-        uint256 length = yieldAssetList.length;
-        for (uint256 i = 0; i < length; i++) {
-            address token = yieldAssetList[i];
-            YieldAsset storage yieldAsset = yieldAssets[token];
-
-            if (!yieldAsset.active) continue;
-
-            total += _getYieldAssetValue(yieldAsset);
-        }
+    function _calculateActualYieldValue(uint256 trackedDeposits) internal view returns (uint256 total) {
+        uint256 vaultValue = _sumActiveYieldAssetValue();
+        total = vaultValue;
 
         // Add USDC held directly (only the tracked portion, not donations)
-        // We use min(balance, totalDepositedAssets) to avoid counting donations
-        uint256 usdcBalance = IERC20(asset()).balanceOf(address(this));
-        uint256 usdcTracked = totalDepositedAssets > total ? totalDepositedAssets - total : 0;
+        // We use min(balance, trackedDeposits - vaultValue) to avoid counting donations
+        IERC20 usdc = IERC20(assetAddress);
+        uint256 usdcBalance = usdc.balanceOf(address(this));
+        uint256 usdcTracked = trackedDeposits > vaultValue ? trackedDeposits - vaultValue : 0;
         total += usdcBalance < usdcTracked ? usdcBalance : usdcTracked;
+    }
+
+    /**
+     * @dev Returns the current USDC-equivalent value of all active yield assets
+     *      Caches `yieldAssetList` in memory to avoid repeated storage reads during loops.
+     */
+    function _sumActiveYieldAssetValue() internal view returns (uint256 vaultValue) {
+        address[] memory tokens = yieldAssetList;
+        uint256 length = tokens.length;
+        for (uint256 i = 0; i < length; i++) {
+            YieldAsset storage yieldAsset = yieldAssets[tokens[i]];
+            if (!yieldAsset.active) continue;
+            vaultValue += _getYieldAssetValue(yieldAsset);
+        }
     }
 
     /**
