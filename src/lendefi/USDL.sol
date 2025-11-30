@@ -35,8 +35,9 @@ pragma solidity 0.8.23;
  * @custom:security-contact security@lendefimarkets.com
  */
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import {ERC20PausableUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
+import {
+    ERC20PausableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -49,9 +50,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IGetCCIPAdmin} from "../interfaces/IGetCCIPAdmin.sol";
 import {IBurnMintERC20} from "../interfaces/IBurnMintERC20.sol";
-import {
-    AssetType, IERC4626 as IExternalERC4626, IOUSGInstantManager, IRWAOracle
-} from "../interfaces/IYieldProtocols.sol";
+import {AssetType, IOUSGInstantManager, IRWAOracle} from "../interfaces/IYieldProtocols.sol";
 import {AutomationCompatibleInterface} from "../interfaces/AutomationCompatibleInterface.sol";
 
 /// @custom:oz-upgrades
@@ -1121,7 +1120,7 @@ contract USDL is
 
         if (yieldAsset.assetType == AssetType.ERC4626) {
             // ERC-4626: convertToAssets gives underlying value
-            value = IExternalERC4626(yieldAsset.manager).convertToAssets(balance);
+            value = IERC4626(yieldAsset.manager).convertToAssets(balance);
         } else if (yieldAsset.assetType == AssetType.AAVE_V3) {
             // Aave aTokens are 1:1 with underlying (they rebase)
             value = balance;
@@ -1351,7 +1350,7 @@ contract USDL is
 
     function _depositIntoERC4626Vault(YieldAsset storage yieldAsset, uint256 amount) internal {
         IERC20(yieldAsset.depositToken).safeIncreaseAllowance(yieldAsset.manager, amount);
-        IExternalERC4626(yieldAsset.manager).deposit(amount, address(this));
+        IERC4626(yieldAsset.manager).deposit(amount, address(this));
     }
 
     function _withdrawFromERC4626Vault(YieldAsset storage yieldAsset, uint256 requestedAssets, uint256 shareBalance)
@@ -1361,7 +1360,7 @@ contract USDL is
             return;
         }
 
-        IExternalERC4626 vault = IExternalERC4626(yieldAsset.manager);
+        IERC4626 vault = IERC4626(yieldAsset.manager);
         uint256 sharesToRedeem = vault.convertToShares(requestedAssets);
         if (sharesToRedeem == 0) {
             sharesToRedeem = shareBalance;
