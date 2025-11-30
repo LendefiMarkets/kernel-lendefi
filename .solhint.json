@@ -17,6 +17,7 @@
     "visibility-modifier-order": "warn",
     "no-unused-vars": "warn",
     "quotes": ["error", "double"],
-    "max-line-length": ["warn", 120]
+    "max-line-length": ["warn", 120],
+    "import-path-check": "off"
   }
 }
