@@ -915,6 +915,19 @@ contract USDL is
             // Pull realized gains back into USDC before updating accounting
             _harvestYield(yieldAccrued);
 
+            // After harvest, recalculate with all USDC now in contract
+            // (not just tracked portion, since _harvestYield deposits harvested USDC here)
+            uint256 vaultValue = 0;
+            uint256 length = yieldAssetList.length;
+            for (uint256 i = 0; i < length; i++) {
+                address token = yieldAssetList[i];
+                YieldAsset storage yieldAsset = yieldAssets[token];
+                if (!yieldAsset.active) continue;
+                vaultValue += _getYieldAssetValue(yieldAsset);
+            }
+            uint256 usdcBalance = IERC20(asset()).balanceOf(address(this));
+            actualValue = vaultValue + usdcBalance;
+
             // Update rebase index proportionally to distribute yield to all holders
             // newIndex = oldIndex * actualValue / currentDeposited
             uint256 oldIndex = rebaseIndex;
