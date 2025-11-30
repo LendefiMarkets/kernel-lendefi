@@ -5,7 +5,6 @@ import "forge-std/Test.sol";
 import "forge-std/console.sol";
 import "../src/lendefi/USDL.sol";
 import {AssetType} from "../src/interfaces/IYieldProtocols.sol";
-import {IBurnMintERC20} from "../src/interfaces/IBurnMintERC20.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract MockUSDC {
@@ -67,7 +66,7 @@ contract MockERC4626Vault {
     }
 
     function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
-        depositToken.transferFrom(msg.sender, address(this), assets);
+        require(depositToken.transferFrom(msg.sender, address(this), assets), "Transfer failed");
         usdcReserve += assets;
         shares = assets; // 1:1 shares to assets at deposit time
         balanceOf[receiver] += shares;
@@ -82,7 +81,7 @@ contract MockERC4626Vault {
         assets = (shares * yieldRate) / 1e6;
         // Transfer USDC from reserve (now with yield)
         usdcReserve -= assets;
-        depositToken.transfer(receiver, assets);
+        require(depositToken.transfer(receiver, assets), "Transfer failed");
     }
 
     function convertToShares(uint256 assets) external view returns (uint256) {
@@ -180,7 +179,7 @@ contract USDLStressTest is Test {
         console.log("Step 4: Phase 7 - Final withdrawals");
         console.log("  User1 shares before: %d", usdlProxy.balanceOf(user1));
         console.log("  User1 maxRedeem: %d", usdlProxy.maxRedeem(user1));
-        _phase7_FinalWithdrawals();
+        _phase7FinalWithdrawals();
         console.log("  User1 shares after: %d", usdlProxy.balanceOf(user1));
 
         console.log("Step 5: Verify final state");
@@ -299,7 +298,7 @@ contract USDLStressTest is Test {
         vm.stopPrank();
     }
 
-    function _phase6_FinalYieldAccrual() internal {
+    function _phase6FinalYieldAccrual() internal {
         uint256 totalAssetsBefore = usdlProxy.totalAssets();
 
         // Mint 51.8% more USDC into vault reserve (1.518x rate)
@@ -312,7 +311,7 @@ contract USDLStressTest is Test {
         assertGt(usdlProxy.totalAssets(), totalAssetsBefore, "Total assets should increase after final yield");
     }
 
-    function _phase7_FinalWithdrawals() internal {
+    function _phase7FinalWithdrawals() internal {
         address[5] memory users = [user1, user2, user3, user4, user5];
         for (uint256 i = 0; i < users.length; i++) {
             // Use balanceOf (rebased) not sharesOf (raw) after yield accrual
