@@ -55,6 +55,7 @@ contract MockERC4626Vault {
     mapping(address => mapping(address => uint256)) public allowance;
     uint256 public totalSupply;
     uint256 public yieldMultiplier = 1e18;
+    uint256 public usdcReserve; // Tracks actual USDC in the vault for yield distribution
 
     constructor(address _depositToken) {
         depositToken = MockUSDC(_depositToken);
@@ -62,10 +63,17 @@ contract MockERC4626Vault {
 
     function setYieldMultiplier(uint256 _multiplier) external {
         yieldMultiplier = _multiplier;
+        // When yield multiplier is set, mint extra USDC into reserve to simulate yield
+        if (_multiplier > 1e18) {
+            uint256 yieldAmount = (usdcReserve * (_multiplier - 1e18)) / 1e18;
+            depositToken.mint(address(this), yieldAmount);
+            usdcReserve += yieldAmount;
+        }
     }
 
     function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
         depositToken.transferFrom(msg.sender, address(this), assets);
+        usdcReserve += assets;
         shares = assets;
         balanceOf[receiver] += shares;
         totalSupply += shares;
@@ -76,7 +84,12 @@ contract MockERC4626Vault {
         balanceOf[_owner] -= shares;
         totalSupply -= shares;
         assets = (shares * yieldMultiplier) / 1e18;
-        depositToken.mint(receiver, assets);
+        if (usdcReserve >= assets) {
+            usdcReserve -= assets;
+            depositToken.transfer(receiver, assets);
+        } else {
+            depositToken.mint(receiver, assets);
+        }
     }
 
     function convertToShares(uint256 assets) external view returns (uint256) {
@@ -857,7 +870,7 @@ contract USDLTest is Test {
 
         uint256 expectedYield = (netDeposited * (multiplier - 1e18)) / 1e18;
         assertApproxEqAbs(usdc.balanceOf(address(usdlProxy)), expectedYield, 1, "harvested yield should sit in USDC");
-        assertEq(usdlProxy.totalAssets(), netDeposited + expectedYield, "accounting reflects realized yield");
+        assertApproxEqAbs(usdlProxy.totalAssets(), netDeposited + expectedYield, 1, "accounting reflects realized yield");
     }
 
     function test_DepositAllocatesToYieldAsset() public {
